@@ -18,6 +18,11 @@ export async function isAccessibilityEnabled() {
   try { return await L.isAccessibilityEnabled(); } catch (e) { return false; }
 }
 
+export async function openAccessibilitySettings() {
+  if (!L?.openAccessibilitySettings) return;
+  try { await L.openAccessibilitySettings(); } catch (e) {}
+}
+
 export async function lockScreen() {
   if (!L?.lock) return 'none';
   try {

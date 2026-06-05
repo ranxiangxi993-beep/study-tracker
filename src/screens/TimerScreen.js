@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isAccessibilityEnabled, isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, openAccessibilitySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -185,7 +185,10 @@ export default function TimerScreen() {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
             if (!hasAcc) {
-              Alert.alert('开启专注锁', '请先开启无障碍服务：\n\n设置 → 无障碍 → 研途专注辅助 → 开启\n\n开启后：打开非白名单App会自动弹回', [{ text: '去设置' }]);
+              Alert.alert('开启专注锁', '需要开启无障碍服务：\n\n在列表中打开「研途专注」', [
+                { text: '去开启', onPress: openAccessibilitySettings },
+                { text: '取消', style: 'cancel' }
+              ]);
               return;
             }
             const result = await lockScreen();
