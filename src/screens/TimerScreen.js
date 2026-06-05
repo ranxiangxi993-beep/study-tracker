@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, setLockTaskWhitelist } from '../nativeLock';
+import { isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -127,8 +127,11 @@ export default function TimerScreen() {
 
   // Init
   useEffect(() => {
-    AsyncStorage.getItem('custom_durations').then(d => { if (d) setCustomMin(JSON.parse(d)); });
+    AsyncStorage.getItem('custom_durations').then(d => {
+      if (d) { const v = JSON.parse(d); setCustomMin(v); setTimeLeft(v.work * 60); setTotalTime(v.work * 60); }
+    });
     AsyncStorage.getItem('accent_color').then(c => { if (c) setAccentColor(c); });
+    AsyncStorage.getItem('wl_pkgs').then(d => { if (d) setWlPkgs(JSON.parse(d)); });
     getActiveSession().then(a => {
       if (a) { setActiveSubject(a.subject); setSessionId(a.id);
         const el = Math.floor((Date.now() - new Date(a.start_time).getTime()) / 1000);
@@ -261,7 +264,7 @@ export default function TimerScreen() {
                     onPress={async () => {
                       const next = wlPkgs.includes(a.pkg) ? wlPkgs.filter(x => x !== a.pkg) : [...wlPkgs, a.pkg];
                       setWlPkgs(next);
-                      await setLockTaskWhitelist(next);
+                      await saveWhitelist(next);
                     }}>
                     <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: wlPkgs.includes(a.pkg) ? accentColor : COLORS.text2, backgroundColor: wlPkgs.includes(a.pkg) ? accentColor : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                       {wlPkgs.includes(a.pkg) && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}

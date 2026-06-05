@@ -33,8 +33,14 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun lock(p: Promise) {
         try {
+            // Read saved whitelist from SharedPreferences
+            val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            val saved = prefs.getString("whitelist", "") ?: ""
+            val pkgs = if (saved.isNotEmpty()) saved.split(",").toTypedArray() else arrayOf()
+            val fullList = (listOf(reactApplicationContext.packageName) + pkgs).toTypedArray()
+
             if (dpm.isAdminActive(comp)) {
-                dpm.setLockTaskPackages(comp, arrayOf(reactApplicationContext.packageName))
+                dpm.setLockTaskPackages(comp, fullList)
                 try {
                     reactApplicationContext.currentActivity?.startLockTask()
                     p.resolve("kiosk")

@@ -1,11 +1,7 @@
 import { NativeModules, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const L = NativeModules.StudyLock;
-
-// Show diagnostic if module missing
-if (!L) {
-  console.warn('StudyLock native module not found!');
-}
 
 export async function isDeviceAdminActive() {
   if (!L?.isAdmin) return false;
@@ -19,6 +15,11 @@ export async function requestDeviceAdmin() {
 
 export async function lockScreen() {
   if (!L?.lock) return 'none';
+  // Sync whitelist from AsyncStorage to native SharedPreferences before locking
+  try {
+    const pkgs = JSON.parse(await AsyncStorage.getItem('wl_pkgs') || '[]');
+    if (L.setWhitelist) await L.setWhitelist(pkgs);
+  } catch (_) {}
   try { return await L.lock(); } catch (e) { return 'error'; }
 }
 
@@ -32,7 +33,8 @@ export async function getInstalledApps() {
   try { return await L.getApps(); } catch (e) { return []; }
 }
 
-export async function setLockTaskWhitelist(pkgs) {
-  if (!L?.setWhitelist) return false;
-  try { await L.setWhitelist(pkgs); return true; } catch (e) { return false; }
+export async function saveWhitelist(pkgs) {
+  await AsyncStorage.setItem('wl_pkgs', JSON.stringify(pkgs));
+  if (L?.setWhitelist) await L.setWhitelist(pkgs);
 }
+
