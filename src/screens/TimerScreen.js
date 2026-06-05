@@ -258,7 +258,7 @@ export default function TimerScreen() {
       {/* Whitelist Modal */}
       <Modal visible={showApps} animationType="slide" transparent onRequestClose={() => setShowApps(false)}>
         <Pressable style={styles.overlay} onPress={() => setShowApps(false)}>
-          <Pressable style={[styles.sheet, { maxHeight: '80%' }]} onPress={() => {}}>
+          <View style={[styles.sheet, { maxHeight: '80%' }]}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>📋 白名单 App</Text>
             <ScrollView style={{ maxHeight: 350 }}>
@@ -282,7 +282,7 @@ export default function TimerScreen() {
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowApps(false)}>
               <Text style={{ color: COLORS.text2 }}>关闭</Text>
             </TouchableOpacity>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     </View>

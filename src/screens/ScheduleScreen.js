@@ -132,7 +132,6 @@ function TimeWheel({ value, onChange }) {
   const baseHours = Array.from({ length: 24 }, (_, i) => i);
   const baseMins = Array.from({ length: 12 }, (_, i) => i * 5);
 
-  // Duplicate items for infinite scroll effect
   const hours = Array.from({ length: COPIES }, () => baseHours).flat();
   const mins = Array.from({ length: COPIES }, () => baseMins).flat();
   const midH = Math.floor(COPIES / 2) * 24 + baseHours.indexOf(h);
@@ -140,60 +139,53 @@ function TimeWheel({ value, onChange }) {
 
   const hRef = useRef(null);
   const mRef = useRef(null);
-  const hVal = useRef(h);
-  const mVal = useRef(m);
-  const initialH = useRef(midH);
-  const initialM = useRef(midM);
-
   const [hCenter, setHCenter] = useState(midH);
   const [mCenter, setMCenter] = useState(midM);
+
+  useEffect(() => {
+    const idx = baseHours.indexOf(h) + Math.floor(COPIES / 2) * 24;
+    hRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
+  }, [h]);
+  useEffect(() => {
+    const idx = baseMins.indexOf(m) + Math.floor(COPIES / 2) * 12;
+    mRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
+  }, [m]);
 
   const onHScroll = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
     setHCenter(idx);
   };
+  const onHEnd = (e) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    setTime(baseHours[idx % 24], m);
+  };
   const onMScroll = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
     setMCenter(idx);
   };
-  const onHEnd = (e) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    const real = baseHours[idx % 24];
-    hVal.current = real;
-    setTime(real, mVal.current);
-  };
   const onMEnd = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    const real = baseMins[idx % 12];
-    mVal.current = real;
-    setTime(hVal.current, real);
+    setTime(h, baseMins[idx % 12]);
   };
 
   const setTime = (hh, mm) => {
     onChange(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
   };
 
-  // Sync external value changes
-  useEffect(() => { hVal.current = h; }, [h]);
-  useEffect(() => { mVal.current = m; }, [m]);
-
-  const renderWheel = (ref, items, initOffset, centerIdx, onScroll, onEnd) => (
+  const renderWheel = (ref, items, centerIdx, onScroll, onEnd) => (
     <View style={{ width: 64, height: ITEM_H * 3, overflow: 'hidden' }}>
-      {/* Fixed selection box */}
-      <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent + '25', borderRadius: 8 }} />
-      <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '60' }} />
-      <View style={{ position: 'absolute', top: ITEM_H * 2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '60' }} />
+      <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent + '20', borderRadius: 8 }} />
+      <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
+      <View style={{ position: 'absolute', top: ITEM_H * 2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
 
       <ScrollView
         ref={ref}
         showsVerticalScrollIndicator={false}
-        decelerationRate={0.94}
-        snapToInterval={ITEM_H}
-        disableIntervalMomentum={false}
+        decelerationRate={0.96}
         onScroll={onScroll}
         scrollEventThrottle={16}
         onMomentumScrollEnd={onEnd}
-        contentOffset={{ x: 0, y: initOffset * ITEM_H }}
+        snapToInterval={ITEM_H}
         contentContainerStyle={{ paddingVertical: ITEM_H }}
       >
         {items.map((val, i) => {
@@ -213,9 +205,9 @@ function TimeWheel({ value, onChange }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
-      {renderWheel(hRef, hours, midH, hCenter, onHScroll, onHEnd)}
+      {renderWheel(hRef, hours, hCenter, onHScroll, onHEnd)}
       <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
-      {renderWheel(mRef, mins, midM, mCenter, onMScroll, onMEnd)}
+      {renderWheel(mRef, mins, mCenter, onMScroll, onMEnd)}
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
     </View>
   );
@@ -243,7 +235,7 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.editorOverlay} onPress={onClose}>
-        <Pressable style={styles.editorSheet} onPress={() => {}}>
+        <View style={styles.editorSheet}>
           <View style={styles.editorHandle} />
           <Text style={styles.editorTitle}>{initial ? '编辑安排' : '添加安排'}</Text>
 
@@ -293,7 +285,7 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
               <Text style={styles.saveTxt}>保存</Text>
             </TouchableOpacity>
           </View>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
