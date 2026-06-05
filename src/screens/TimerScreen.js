@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -183,12 +183,14 @@ export default function TimerScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 }}>
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
             if (locked) { await unlockScreen(); setLocked(false); return; }
-            const admin = await isDeviceAdminActive();
-            if (!admin) { Alert.alert('激活设备管理器', '先去 设置→安全→设备管理器→研途 激活', [{ text: '去激活', onPress: requestDeviceAdmin }]); return; }
+            const hasAcc = await isAccessibilityEnabled();
+            if (!hasAcc) {
+              Alert.alert('开启专注锁', '请先开启无障碍服务：\n\n设置 → 无障碍 → 研途专注辅助 → 开启\n\n开启后：打开非白名单App会自动弹回', [{ text: '去设置' }]);
+              return;
+            }
             const result = await lockScreen();
             if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
-            if (result === 'error') { Alert.alert('锁机失败', '请先激活设备管理器：\n设置→安全→设备管理器→研途'); return; }
-            setLocked(true); Alert.alert('已锁定', result === 'kiosk' ? 'Kiosk模式：白名单外的App全部禁用' : '基础锁屏：长按返回+概览退出');
+            setLocked(true); Alert.alert('已锁定', '白名单外的App打开后会立即弹回研途');
           }}>
             <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>
           </TouchableOpacity>

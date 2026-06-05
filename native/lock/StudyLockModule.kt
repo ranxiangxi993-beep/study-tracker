@@ -4,7 +4,6 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import com.facebook.react.bridge.*
 
 class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule(ctx) {
@@ -27,27 +26,20 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
 
+    // Accessibility-based lock (primary method)
     @ReactMethod fun lock(p: Promise) {
-        try {
-            val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
-            val saved = prefs.getString("whitelist", "") ?: ""
-            val pkgs = if (saved.isNotEmpty()) saved.split(",").filter { it.isNotBlank() }.toTypedArray() else arrayOf()
-            val fullList = (listOf(reactApplicationContext.packageName) + pkgs).toTypedArray()
-
-            if (dpm.isAdminActive(comp)) {
-                try { dpm.setLockTaskPackages(comp, fullList) } catch (_: Exception) {}
-                reactApplicationContext.currentActivity?.startLockTask()
-                p.resolve("kiosk")
-            } else {
-                reactApplicationContext.currentActivity?.startLockTask()
-                p.resolve("pin")
-            }
-        } catch (e: Exception) { p.reject("ERR", e.message + " " + e.javaClass.simpleName) }
+        StudyAccessibilityService.lockActive = true
+        p.resolve("accessibility")
     }
 
     @ReactMethod fun unlock(p: Promise) {
-        try { reactApplicationContext.currentActivity?.stopLockTask(); p.resolve(true) }
-        catch (e: Exception) { p.reject("ERR", e.message) }
+        StudyAccessibilityService.lockActive = false
+        try { reactApplicationContext.currentActivity?.stopLockTask() } catch (_: Exception) {}
+        p.resolve(true)
+    }
+
+    @ReactMethod fun isAccessibilityEnabled(p: Promise) {
+        p.resolve(StudyAccessibilityService.instance != null)
     }
 
     @ReactMethod fun getApps(p: Promise) {
@@ -66,12 +58,10 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     }
 
     @ReactMethod fun setWhitelist(pkgs: ReadableArray, p: Promise) {
-        try {
-            if (!dpm.isAdminActive(comp)) { p.reject("NO_ADMIN", "先激活设备管理器"); return }
-            val list = mutableListOf(reactApplicationContext.packageName)
-            for (i in 0 until pkgs.size()) list.add(pkgs.getString(i))
-            dpm.setLockTaskPackages(comp, list.toTypedArray())
-            p.resolve(true)
-        } catch (e: Exception) { p.reject("ERR", e.message) }
+        val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+        val list = mutableListOf<String>()
+        for (i in 0 until pkgs.size()) list.add(pkgs.getString(i) ?: continue)
+        prefs.edit().putString("whitelist", list.joinToString(",")).apply()
+        p.resolve(true)
     }
 }
