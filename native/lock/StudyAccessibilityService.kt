@@ -5,7 +5,6 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
-import android.app.PendingIntent
 
 class StudyAccessibilityService : AccessibilityService() {
 
@@ -17,13 +16,11 @@ class StudyAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        val info = AccessibilityServiceInfo().apply {
+        serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
-            flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         }
-        setServiceInfo(info)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -31,12 +28,8 @@ class StudyAccessibilityService : AccessibilityService() {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
             if (pkg != packageName && !isWhitelisted(pkg)) {
-                // Launch our lock overlay activity
-                val intent = Intent(this, LockOverlayActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    putExtra("blocked_pkg", pkg)
-                }
-                startActivity(intent)
+                // 1. Lock screen (system-level, like pressing power button)
+                performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
             }
         }
     }
