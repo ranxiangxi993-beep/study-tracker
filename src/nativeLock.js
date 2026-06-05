@@ -1,33 +1,10 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 
-const StudyLock = NativeModules.StudyLock || {};
+const L = NativeModules.StudyLock || {};
 
-export async function isDeviceAdminActive() {
-  if (!StudyLock.isDeviceAdminActive) return false;
-  return StudyLock.isDeviceAdminActive();
-}
-
-export async function requestDeviceAdmin() {
-  if (!StudyLock.requestDeviceAdmin) return false;
-  return StudyLock.requestDeviceAdmin();
-}
-
-export async function lockScreen() {
-  if (!StudyLock.lockScreen) return 'locked_pin'; // fallback
-  return StudyLock.lockScreen();
-}
-
-export async function unlockScreen() {
-  if (!StudyLock.unlockScreen) return false;
-  return StudyLock.unlockScreen();
-}
-
-export async function getInstalledApps() {
-  if (!StudyLock.getInstalledApps) return [];
-  return StudyLock.getInstalledApps();
-}
-
-export async function setLockTaskWhitelist(packages) {
-  if (!StudyLock.setLockTaskWhitelist) return false;
-  return StudyLock.setLockTaskWhitelist(packages);
-}
+export async function isDeviceAdminActive() { return L.isAdmin ? L.isAdmin() : false; }
+export async function requestDeviceAdmin() { return L.requestAdmin ? L.requestAdmin() : false; }
+export async function lockScreen() { return L.lock ? L.lock() : 'pin'; }
+export async function unlockScreen() { return L.unlock ? L.unlock() : false; }
+export async function getInstalledApps() { return L.getApps ? L.getApps() : []; }
+export async function setLockTaskWhitelist(pkgs) { return L.setWhitelist ? L.setWhitelist(pkgs) : false; }

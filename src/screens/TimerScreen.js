@@ -13,6 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
+import { isDeviceAdminActive, requestDeviceAdmin, lockScreen, unlockScreen, getInstalledApps, setLockTaskWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -26,6 +27,10 @@ export default function TimerScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [countUp, setCountUp] = useState(false);
   const [accentColor, setAccentColor] = useState(COLORS.accent);
+  const [locked, setLocked] = useState(false);
+  const [showApps, setShowApps] = useState(false);
+  const [appsList, setAppsList] = useState([]);
+  const [wlPkgs, setWlPkgs] = useState([]);
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
   const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
@@ -108,7 +113,7 @@ export default function TimerScreen() {
   const pickBg = async () => {
     const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!p.granted) { Alert.alert('需要相册权限'); return; }
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true, aspect: [9, 16] });
     if (r.canceled || !r.assets[0]) return;
     try {
       const dir = FileSystem.documentDirectory + 'bg/';
@@ -171,6 +176,22 @@ export default function TimerScreen() {
 
         <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
 
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 }}>
+          <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
+            if (locked) { await unlockScreen(); setLocked(false); return; }
+            const admin = await isDeviceAdminActive();
+            if (!admin) { Alert.alert('激活设备管理器', '设置 → 安全 → 设备管理器 → 考研计时器专注锁', [{ text: '去激活', onPress: requestDeviceAdmin }, { text: '取消', style: 'cancel' }]); return; }
+            await lockScreen(); setLocked(true); Alert.alert('已锁定', '手机已进入专注模式');
+          }}>
+            <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.lockBtn} onPress={async () => {
+            const apps = await getInstalledApps(); setAppsList(apps || []); setShowApps(true);
+          }}>
+            <Text style={styles.lockBtnT}>📋 白名单</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.ctrls}>
           <TouchableOpacity style={[styles.go, { backgroundColor: accentColor }, isRunning && !isPaused && { backgroundColor: COLORS.warning }]} onPress={() => { if (!isRunning || isPaused) doStart(); else doPause(); }}>
             <Text style={[styles.goT, { color: btnTextColor }]}>{!isRunning ? '▶ 开始学习' : (isPaused ? '▶ 继续' : '⏸ 暂停')}</Text>
@@ -219,6 +240,36 @@ export default function TimerScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Whitelist Modal */}
+      <Modal visible={showApps} animationType="slide" transparent onRequestClose={() => setShowApps(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { maxHeight: '80%' }]}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetT}>📋 白名单 App</Text>
+            <ScrollView style={{ maxHeight: 350 }}>
+              {appsList.length === 0 ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>加载中...</Text> :
+                appsList.map((a, i) => (
+                  <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 }}
+                    onPress={async () => {
+                      const next = wlPkgs.includes(a.pkg) ? wlPkgs.filter(x => x !== a.pkg) : [...wlPkgs, a.pkg];
+                      setWlPkgs(next);
+                      await setLockTaskWhitelist(next);
+                    }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: wlPkgs.includes(a.pkg) ? accentColor : COLORS.text2, backgroundColor: wlPkgs.includes(a.pkg) ? accentColor : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                      {wlPkgs.includes(a.pkg) && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+                    </View>
+                    <Text style={{ flex: 1, fontSize: 13, color: COLORS.text }}>{a.name}</Text>
+                  </TouchableOpacity>
+                ))
+              }
+            </ScrollView>
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowApps(false)}>
+              <Text style={{ color: COLORS.text2 }}>关闭</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -263,4 +314,7 @@ const styles = StyleSheet.create({
   bgb: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   bgbT: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   colorSwatch: { width: 36, height: 36, borderRadius: 18 },
+  lockBtn: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.lock, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 },
+  lockBtnOn: { backgroundColor: COLORS.success, borderColor: COLORS.success },
+  lockBtnT: { color: COLORS.lock, fontSize: 13, fontWeight: '600' },
 });
