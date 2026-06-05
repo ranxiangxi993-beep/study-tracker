@@ -17,9 +17,16 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun openAccessibilitySettings(p: Promise) {
         try {
-            reactApplicationContext.startActivity(Intent("android.settings.ACCESSIBILITY_SETTINGS").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            // Try standard intent first
+            val intent = Intent("android.settings.ACCESSIBILITY_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            // If standard fails, try MIUI/ColorOS specific
+            if (reactApplicationContext.packageManager.resolveActivity(intent, 0) == null) {
+                intent.setClassName("com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity")
+            }
+            if (reactApplicationContext.packageManager.resolveActivity(intent, 0) == null) {
+                intent.action = "com.android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+            }
+            reactApplicationContext.startActivity(intent)
             p.resolve(true)
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
