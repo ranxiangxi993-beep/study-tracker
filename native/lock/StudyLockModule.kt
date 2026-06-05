@@ -17,16 +17,31 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun openAccessibilitySettings(p: Promise) {
         try {
-            // Try standard intent first
-            val intent = Intent("android.settings.ACCESSIBILITY_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            // If standard fails, try MIUI/ColorOS specific
-            if (reactApplicationContext.packageManager.resolveActivity(intent, 0) == null) {
-                intent.setClassName("com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity")
+            val ctx = reactApplicationContext
+            // Try 1: standard accessibility settings
+            var intent = Intent("android.settings.ACCESSIBILITY_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            // Try 2: direct accessibility class
+            if (ctx.packageManager.resolveActivity(intent, 0) == null) {
+                intent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             }
-            if (reactApplicationContext.packageManager.resolveActivity(intent, 0) == null) {
-                intent.action = "com.android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+            // Try 3: MIUI specific
+            if (ctx.packageManager.resolveActivity(intent, 0) == null) {
+                intent = Intent().apply {
+                    setClassName("com.android.settings", "com.android.settings.SubSettings")
+                    putExtra(":settings:fragment_args_key", "accessibility_settings")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             }
-            reactApplicationContext.startActivity(intent)
+            // Fallback: app details page (always works)
+            if (ctx.packageManager.resolveActivity(intent, 0) == null) {
+                intent = Intent("android.settings.APPLICATION_DETAILS_SETTINGS").apply {
+                    data = android.net.Uri.parse("package:${ctx.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            ctx.startActivity(intent)
             p.resolve(true)
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
