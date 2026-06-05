@@ -14,7 +14,7 @@ jobs:
           java-version: 17
       - run: npm install
       - run: npx expo prebuild --platform android
-      - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml
+      - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml android/app/src/main/res/values
       - run: cp native/lock/*.kt android/app/src/main/java/com/kaoyan/studytimer/lock/
       - run: cp native/res/xml/*.xml android/app/src/main/res/xml/
       - run: cp native/res/values/*.xml android/app/src/main/res/values/
