@@ -4,6 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SESSIONS_KEY = 'study_sessions';
 const GOALS_KEY = 'study_goals';
 
+// Local date helper (UTC+8 safe, unlike toISOString)
+function localDate(d) { const t = d || new Date(); return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
+
 // ====== Sessions ======
 
 export async function getSessions() {
@@ -24,7 +27,7 @@ export async function startSession(subject) {
     start_time: new Date().toISOString(),
     end_time: null,
     duration: 0,
-    date: new Date().toISOString().slice(0, 10),
+    date: localDate(),
     note: '',
   };
   sessions.push(session);
@@ -63,7 +66,7 @@ export async function deleteSession(id) {
 
 export async function getTodayStats() {
   const sessions = await getSessions();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const todaySessions = sessions.filter(s => s.date === today && s.duration > 0);
   const bySubject = {};
   todaySessions.forEach(s => {
@@ -84,7 +87,7 @@ export async function getWeekStats() {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDate(d);
     const daySessions = sessions.filter(s => s.date === dateStr && s.duration > 0);
     const bySubject = {};
     let total = 0;
@@ -118,7 +121,7 @@ export async function getYearlyHeatmap() {
 
   // Initialize all days of the year with 0
   for (let d = new Date(yearStart); d <= now; d.setDate(d.getDate() + 1)) {
-    const key = d.toISOString().slice(0, 10);
+    const key = localDate(d);
     days[key] = 0;
   }
 
@@ -172,8 +175,8 @@ export async function getPeriodStats(period) {
       startDate = new Date(now);
   }
 
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = now.toISOString().slice(0, 10);
+  const startStr = localDate(startDate);
+  const endStr = localDate(now);
   return getStatsInRange(startStr, endStr);
 }
 
@@ -184,7 +187,7 @@ export async function getStreak() {
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDate(d);
     if (sessions.some(s => s.date === dateStr && s.duration > 0)) {
       streak = i + 1;
     } else {
