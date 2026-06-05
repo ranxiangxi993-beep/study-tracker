@@ -3,14 +3,17 @@ on: [workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: ""
       - run: npm ci --legacy-peer-deps
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - run: npx eas build --platform android --profile preview --non-interactive
+      - run: npx eas build --platform android --profile preview --non-interactive --no-wait
