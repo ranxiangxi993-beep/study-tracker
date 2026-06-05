@@ -35,7 +35,7 @@ class StudyAccessibilityService : AccessibilityService() {
             if (now - lastBackTime < 500) return // debounce 0.5s
             lastBackTime = now
 
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            performGlobalAction(GLOBAL_ACTION_HOME)
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
