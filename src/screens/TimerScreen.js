@@ -180,8 +180,11 @@ export default function TimerScreen() {
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const admin = await isDeviceAdminActive();
-            if (!admin) { Alert.alert('激活设备管理器', '设置 → 安全 → 设备管理器 → 考研计时器专注锁', [{ text: '去激活', onPress: requestDeviceAdmin }, { text: '取消', style: 'cancel' }]); return; }
-            await lockScreen(); setLocked(true); Alert.alert('已锁定', '手机已进入专注模式');
+            if (!admin) { Alert.alert('激活设备管理器', '先去 设置→安全→设备管理器→考研计时器专注锁 激活', [{ text: '去激活', onPress: requestDeviceAdmin }]); return; }
+            const result = await lockScreen();
+            if (result === 'none') { Alert.alert('错误', '锁机模块未加载，请确认是从 GitHub Actions 下载的 APK'); return; }
+            if (result === 'error') { Alert.alert('错误', '锁机调用失败'); return; }
+            setLocked(true); Alert.alert('已锁定', '手机已进入专注模式 (' + result + ')');
           }}>
             <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>
           </TouchableOpacity>
