@@ -16,10 +16,6 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun isAdmin(p: Promise) { p.resolve(dpm.isAdminActive(comp)) }
 
-    @ReactMethod fun isAccessibilityEnabled(p: Promise) {
-        p.resolve(StudyAccessibilityService.isActive)
-    }
-
     @ReactMethod fun requestAdmin(p: Promise) {
         try {
             reactApplicationContext.startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
