@@ -153,7 +153,7 @@ export default function TimerScreen() {
         <TouchableOpacity onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
           <Text style={styles.gear}>⚙️</Text>
         </TouchableOpacity>
-        <Text style={styles.ttl}>📚 考研计时器</Text>
+        <Text style={styles.ttl}>📚 研途·上岸</Text>
         <View style={styles.sb}><Text style={styles.sbt}>🔥 {streak}天</Text></View>
       </View>
 
