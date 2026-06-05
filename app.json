@@ -1,17 +1,23 @@
 {
   "expo": {
-    "name": "study-app",
-    "slug": "study-app",
+    "name": "考研计时器",
+    "slug": "study-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0f0f1a",
+    "plugins": [
+      "expo-notifications"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kaoyan.studytimer"
     },
     "android": {
+      "package": "com.kaoyan.studytimer",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0f0f1a",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -19,6 +25,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "30af0839-7e8e-49ad-b025-74124b37c15c"
+      }
+    },
+    "owner": "mochou993"
   }
 }
