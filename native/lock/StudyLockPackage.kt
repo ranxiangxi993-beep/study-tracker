@@ -6,7 +6,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ViewManager
 
 class StudyLockPackage : ReactPackage {
-    override fun createNativeModules(ctx: ReactApplicationContext): List<NativeModule> =
-        listOf(StudyLockModule(ctx))
-    override fun createViewManagers(ctx: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
+        listOf(StudyLockModule(reactContext))
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }
