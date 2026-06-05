@@ -185,7 +185,7 @@ export default function TimerScreen() {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
             if (!hasAcc) {
-              Alert.alert('开启专注锁', '需要开启无障碍服务：\n\n在列表中打开「研途专注」', [
+              Alert.alert('开启专注锁', '需要开启无障碍服务：\n\n跳转后点「已下载的服务」→ 打开「研途专注」', [
                 { text: '去开启', onPress: openAccessibilitySettings },
                 { text: '取消', style: 'cancel' }
               ]);
