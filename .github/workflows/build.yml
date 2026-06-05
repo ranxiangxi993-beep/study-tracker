@@ -14,11 +14,12 @@ jobs:
           java-version: 17
       - run: npm install
       - run: npx expo prebuild --platform android
+      - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml
       - run: cp native/lock/*.kt android/app/src/main/java/com/kaoyan/studytimer/lock/
       - run: cp native/res/*.xml android/app/src/main/res/xml/
       - run: cp native/AndroidManifest.xml android/app/src/main/
-      - run: echo 'import com.kaoyan.studytimer.lock.StudyLockPackage' | cat - android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt > /tmp/tmp && mv /tmp/tmp android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
-      - run: sed -i 's|// Packages that cannot be autolinked|add(StudyLockPackage());\n              // Packages|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
+      - run: sed -i 's|import expo.modules.ReactNativeHostWrapper|import expo.modules.ReactNativeHostWrapper\nimport com.kaoyan.studytimer.lock.StudyLockPackage|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
+      - run: sed -i 's|// add(MyReactNativePackage())|add(StudyLockPackage())|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
       - run: cd android && ./gradlew assembleRelease
       - uses: actions/upload-artifact@v4
         with:
