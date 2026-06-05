@@ -31,17 +31,17 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         try {
             if (dpm.isAdminActive(comp)) {
                 dpm.setLockTaskPackages(comp, arrayOf(reactApplicationContext.packageName))
-                currentActivity?.startLockTask()
+                reactApplicationContext.currentActivity?.startLockTask()
                 p.resolve("kiosk")
             } else {
-                currentActivity?.startLockTask()
+                reactApplicationContext.currentActivity?.startLockTask()
                 p.resolve("pin")
             }
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
 
     @ReactMethod fun unlock(p: Promise) {
-        try { currentActivity?.stopLockTask(); p.resolve(true) }
+        try { reactApplicationContext.currentActivity?.stopLockTask(); p.resolve(true) }
         catch (e: Exception) { p.reject("ERR", e.message) }
     }
 
