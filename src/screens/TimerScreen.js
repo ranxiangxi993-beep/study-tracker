@@ -184,10 +184,10 @@ export default function TimerScreen() {
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const admin = await isDeviceAdminActive();
-            if (!admin) { Alert.alert('激活设备管理器', '先去 设置→安全→设备管理器→考研计时器专注锁 激活', [{ text: '去激活', onPress: requestDeviceAdmin }]); return; }
+            if (!admin) { Alert.alert('激活设备管理器', '先去 设置→安全→设备管理器→研途 激活', [{ text: '去激活', onPress: requestDeviceAdmin }]); return; }
             const result = await lockScreen();
             if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
-            if (result === 'error') { Alert.alert('锁机失败', '请确认已开启：\n\n1. 设置→安全→设备管理器→激活考研计时器\n2. 设置→安全→画面固定→开启'); return; }
+            if (result === 'error') { Alert.alert('锁机失败', '请确认已开启：\n\n1. 设置→安全→设备管理器→激活研途\n2. 设置→安全→画面固定→开启'); return; }
             setLocked(true); Alert.alert('已锁定', result === 'kiosk' ? 'Kiosk模式：白名单外的App全部禁用' : '基础锁屏：长按返回+概览退出');
           }}>
             <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>

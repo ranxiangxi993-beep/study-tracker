@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="device_admin_label">考研计时器专注锁</string>
+    <string name="device_admin_label">研途</string>
     <string name="device_admin_desc">用于在学习时锁定手机，防止分心</string>
 </resources>
