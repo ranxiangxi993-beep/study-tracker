@@ -30,6 +30,7 @@ export default function TimerScreen() {
   const [locked, setLocked] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const [appsList, setAppsList] = useState([]);
+  const [appsLoading, setAppsLoading] = useState(false);
   const [wlPkgs, setWlPkgs] = useState([]);
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
@@ -182,14 +183,16 @@ export default function TimerScreen() {
             const admin = await isDeviceAdminActive();
             if (!admin) { Alert.alert('激活设备管理器', '先去 设置→安全→设备管理器→考研计时器专注锁 激活', [{ text: '去激活', onPress: requestDeviceAdmin }]); return; }
             const result = await lockScreen();
-            if (result === 'none') { Alert.alert('错误', '锁机模块未加载，请确认是从 GitHub Actions 下载的 APK'); return; }
-            if (result === 'error') { Alert.alert('错误', '锁机调用失败'); return; }
-            setLocked(true); Alert.alert('已锁定', '手机已进入专注模式 (' + result + ')');
+            if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
+            if (result === 'error') { Alert.alert('锁机失败', '请确认已开启：\n\n1. 设置→安全→设备管理器→激活考研计时器\n2. 设置→安全→画面固定→开启'); return; }
+            setLocked(true); Alert.alert('已锁定', result === 'kiosk' ? 'Kiosk模式：白名单外的App全部禁用' : '基础锁屏：长按返回+概览退出');
           }}>
             <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.lockBtn} onPress={async () => {
-            const apps = await getInstalledApps(); setAppsList(apps || []); setShowApps(true);
+            setAppsLoading(true); setShowApps(true);
+            const apps = await getInstalledApps();
+            setAppsList(apps || []); setAppsLoading(false);
           }}>
             <Text style={styles.lockBtnT}>📋 白名单</Text>
           </TouchableOpacity>
@@ -251,7 +254,8 @@ export default function TimerScreen() {
             <View style={styles.handle} />
             <Text style={styles.sheetT}>📋 白名单 App</Text>
             <ScrollView style={{ maxHeight: 350 }}>
-              {appsList.length === 0 ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>加载中...</Text> :
+              {appsLoading ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>⏳ 读取已安装应用...</Text> :
+               appsList.length === 0 ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>未获取到应用列表</Text> :
                 appsList.map((a, i) => (
                   <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 }}
                     onPress={async () => {

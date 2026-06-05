@@ -31,11 +31,19 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         try {
             if (dpm.isAdminActive(comp)) {
                 dpm.setLockTaskPackages(comp, arrayOf(reactApplicationContext.packageName))
-                reactApplicationContext.currentActivity?.startLockTask()
-                p.resolve("kiosk")
+                try {
+                    reactApplicationContext.currentActivity?.startLockTask()
+                    p.resolve("kiosk")
+                } catch (se: SecurityException) {
+                    p.reject("PIN_OFF", "请先开启系统画面固定：设置→安全→画面固定→开启")
+                }
             } else {
-                reactApplicationContext.currentActivity?.startLockTask()
-                p.resolve("pin")
+                try {
+                    reactApplicationContext.currentActivity?.startLockTask()
+                    p.resolve("pin")
+                } catch (se: SecurityException) {
+                    p.reject("PIN_OFF", "请先开启系统画面固定：设置→安全→画面固定→开启")
+                }
             }
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
