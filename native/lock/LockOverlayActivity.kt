@@ -28,7 +28,7 @@ class LockOverlayActivity : Activity() {
         )
 
         val tv = TextView(this).apply {
-            text = "🔒 专注中\n\n此应用已被锁定\n请返回研途继续学习"
+            text = "🔒 专注学习中\n\n此应用已锁定\n点击返回研途"
             textSize = 20f
             textAlignment = View.TEXT_ALIGNMENT_CENTER
             setBackgroundColor(0xFF0f0f1a.toInt())

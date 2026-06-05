@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">研途</string>
     <string name="device_admin_label">研途</string>
-    <string name="device_admin_desc">用于在学习时锁定手机，防止分心</string>
+    <string name="device_admin_desc">在学习时锁定手机，防止分心</string>
 </resources>
