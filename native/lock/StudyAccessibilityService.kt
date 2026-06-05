@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 
 class StudyAccessibilityService : AccessibilityService() {
 
@@ -12,19 +13,7 @@ class StudyAccessibilityService : AccessibilityService() {
         var lockActive = false
     }
 
-    private var lastLockTime = 0L
-
-    // System packages that should never be locked
-    private val SYSTEM_PKGS = setOf(
-        "com.android.systemui",
-        "com.android.settings",
-        "com.android.launcher",
-        "com.google.android.apps.nexuslauncher",
-        "com.miui.home",
-        "com.oppo.launcher",
-        "com.huawei.android.launcher",
-        "com.sec.android.app.launcher"
-    )
+    private var lastBackTime = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -32,7 +21,7 @@ class StudyAccessibilityService : AccessibilityService() {
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 200 // slight delay to debounce
+            notificationTimeout = 100
         }
     }
 
@@ -40,27 +29,20 @@ class StudyAccessibilityService : AccessibilityService() {
         if (!lockActive) return
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
-            if (pkg == packageName) return  // never lock our own app
-            if (isSystem(pkg)) return       // never lock system/launcher
-            if (isWhitelisted(pkg)) return  // user-approved apps
+            if (pkg == packageName || isSystem(pkg) || isWhitelisted(pkg)) return
 
-            // Cooldown: at most one lock per 3 seconds
             val now = System.currentTimeMillis()
-            if (now - lastLockTime < 3000) return
-            lastLockTime = now
+            if (now - lastBackTime < 500) return // debounce 0.5s
+            lastBackTime = now
 
-            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun isSystem(pkg: String): Boolean {
-        if (SYSTEM_PKGS.contains(pkg)) return true
-        return pkg.startsWith("com.android.") || pkg == "android"
-    }
-
+    private fun isSystem(pkg: String) = pkg.startsWith("com.android.") || pkg == "android"
     private fun isWhitelisted(pkg: String): Boolean {
-        val prefs = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
-        val saved = prefs.getString("whitelist", "") ?: return false
+        val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE).getString("whitelist", "") ?: return false
         return saved.split(",").contains(pkg)
     }
 
