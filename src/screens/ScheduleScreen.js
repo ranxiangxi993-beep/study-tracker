@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
@@ -242,8 +242,8 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.editorOverlay}>
-        <ScrollView style={styles.editorSheet} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <Pressable style={styles.editorOverlay} onPress={onClose}>
+        <Pressable style={styles.editorSheet} onPress={() => {}}>
           <View style={styles.editorHandle} />
           <Text style={styles.editorTitle}>{initial ? '编辑安排' : '添加安排'}</Text>
 
@@ -293,8 +293,8 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
               <Text style={styles.saveTxt}>保存</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

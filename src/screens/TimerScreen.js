@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Vibration, Alert, Platform, Modal, TextInput, Switch,
+  Vibration, Alert, Platform, Modal, TextInput, Pressable,
 } from 'react-native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -210,8 +210,8 @@ export default function TimerScreen() {
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
+        <Pressable style={styles.overlay} onPress={() => setShowSettings(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>⚙️ 设置</Text>
 
@@ -243,14 +243,14 @@ export default function TimerScreen() {
               {bgUri && <TouchableOpacity style={[styles.bgb, { backgroundColor: COLORS.lock }]} onPress={resetBg}><Text style={styles.bgbT}>↺ 恢复默认</Text></TouchableOpacity>}
             </View>
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 14 }} onPress={() => setShowSettings(false)}><Text style={{ color: COLORS.text2 }}>关闭</Text></TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Whitelist Modal */}
       <Modal visible={showApps} animationType="slide" transparent onRequestClose={() => setShowApps(false)}>
-        <View style={styles.overlay}>
-          <View style={[styles.sheet, { maxHeight: '80%' }]}>
+        <Pressable style={styles.overlay} onPress={() => setShowApps(false)}>
+          <Pressable style={[styles.sheet, { maxHeight: '80%' }]} onPress={() => {}}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>📋 白名单 App</Text>
             <ScrollView style={{ maxHeight: 350 }}>
@@ -274,8 +274,8 @@ export default function TimerScreen() {
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowApps(false)}>
               <Text style={{ color: COLORS.text2 }}>关闭</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
