@@ -29,7 +29,6 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun lock(p: Promise) {
         try {
-            // Read saved whitelist from SharedPreferences
             val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
             val saved = prefs.getString("whitelist", "") ?: ""
             val pkgs = if (saved.isNotEmpty()) saved.split(",").toTypedArray() else arrayOf()
@@ -37,19 +36,11 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
             if (dpm.isAdminActive(comp)) {
                 dpm.setLockTaskPackages(comp, fullList)
-                try {
-                    reactApplicationContext.currentActivity?.startLockTask()
-                    p.resolve("kiosk")
-                } catch (se: SecurityException) {
-                    p.reject("PIN_OFF", "请先开启系统画面固定：设置→安全→画面固定→开启")
-                }
+                reactApplicationContext.currentActivity?.startLockTask()
+                p.resolve("kiosk")
             } else {
-                try {
-                    reactApplicationContext.currentActivity?.startLockTask()
-                    p.resolve("pin")
-                } catch (se: SecurityException) {
-                    p.reject("PIN_OFF", "请先开启系统画面固定：设置→安全→画面固定→开启")
-                }
+                reactApplicationContext.currentActivity?.startLockTask()
+                p.resolve("pin")
             }
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
