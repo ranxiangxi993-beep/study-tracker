@@ -3,6 +3,7 @@ package com.kaoyan.studytimer.lock
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 
@@ -35,7 +36,11 @@ class StudyAccessibilityService : AccessibilityService() {
             if (now - lastBackTime < 500) return // debounce 0.5s
             lastBackTime = now
 
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(homeIntent)
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
