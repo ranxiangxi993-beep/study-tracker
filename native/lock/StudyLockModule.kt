@@ -15,6 +15,15 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun isAdmin(p: Promise) { p.resolve(dpm.isAdminActive(comp)) }
 
+    @ReactMethod fun showDynamicIsland(title: String, body: String, promise: Promise) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                DynamicIsland.show(reactApplicationContext, "📅", title, body)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) { promise.reject("ERR", e.message) }
+    }
+
     @ReactMethod fun openAccessibilitySettings(p: Promise) {
         try {
             val ctx = reactApplicationContext

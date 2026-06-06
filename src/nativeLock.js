@@ -43,6 +43,10 @@ export async function getInstalledApps() {
   try { return await L.getApps(); } catch (e) { return []; }
 }
 
+export async function showDynamicIsland(title, body) {
+  if (L?.showDynamicIsland) try { await L.showDynamicIsland(title, body); } catch (e) {}
+}
+
 export async function saveWhitelist(pkgs) {
   await AsyncStorage.setItem('wl_pkgs', JSON.stringify(pkgs));
   if (L?.setWhitelist) await L.setWhitelist(pkgs);
