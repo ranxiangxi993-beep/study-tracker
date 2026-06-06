@@ -10,7 +10,7 @@ import { useBg } from '../../App';
 import {
   getPeriodStats, getHistory, getHistoryCount,
   deleteSession, formatDuration, getWeekStats,
-  getYearlyHeatmap,
+  getYearlyHeatmap, getStatsInRange,
 } from '../storage';
 
 // Month calendar grid
@@ -70,17 +70,25 @@ export default function StatsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadAll();
-    }, [period])
+    }, [period, selMonth, selYear])
   );
 
   const loadAll = async () => {
-    const [periodStats, hist, count, week] = await Promise.all([
-      getPeriodStats(period),
+    let periodStats;
+    if (period === 'month') {
+      const start = `${selYear}-${String(selMonth+1).padStart(2,'0')}-01`;
+      const end = `${selYear}-${String(selMonth+1).padStart(2,'0')}-${new Date(selYear, selMonth+1, 0).getDate()}`;
+      periodStats = await getStatsInRange(start, end);
+    } else if (period === 'year') {
+      periodStats = await getStatsInRange(`${selYear}-01-01`, `${selYear}-12-31`);
+    } else {
+      periodStats = await getPeriodStats(period);
+    }
+    const [hist, count, week] = await Promise.all([
       getHistory(20, 0),
       getHistoryCount(),
       getWeekStats(),
     ]);
-    // Load yearly heatmap data in background
     getYearlyHeatmap().then(setHeatmapData);
     setStats(periodStats);
     setSessions(hist);
