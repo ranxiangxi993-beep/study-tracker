@@ -169,8 +169,8 @@ export default function TimerScreen() {
   const isLight = accentColor.length === 7 && parseInt(accentColor.slice(1,3),16) > 200 && parseInt(accentColor.slice(3,5),16) > 200 && parseInt(accentColor.slice(5,7),16) > 200;
   const btnTextColor = isLight ? '#333' : '#fff';
   const label = !isRunning ? (countUp ? '正计时 · 00:00' : '准备开始') : (isPaused ? '已暂停' : (mode === 'work' ? `${SUBJECTS[activeSubject]?.name}` : '休息中...'));
-  // Count-up: cap at 2x session time so circle has visible progress
-  const displayTotal = countUp ? Math.max(cfg.minutes * 60 * 2, (timeLeft + 600)) : cfg.minutes * 60;
+  // Count-up: target is 2x the set duration (e.g. set 25min → fills over 50min)
+  const displayTotal = countUp ? cfg.minutes * 120 : cfg.minutes * 60;
 
   return (
     <View style={[styles.wrap, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
