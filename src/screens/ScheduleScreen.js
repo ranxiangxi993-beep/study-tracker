@@ -123,56 +123,36 @@ export default function ScheduleScreen() {
   );
 }
 
-// Time picker - scrollable hour + minute
+// Time picker - clean single-scroll
 const ITEM_H = 44;
-const COPIES = 3;
 
 function TimeWheel({ value, onChange }) {
   const [h, m] = (value || '08:00').split(':').map(Number);
   const baseHours = Array.from({ length: 24 }, (_, i) => i);
-  const baseMins = Array.from({ length: 12 }, (_, i) => i * 5);
-
-  const hours = Array.from({ length: COPIES }, () => baseHours).flat();
-  const mins = Array.from({ length: COPIES }, () => baseMins).flat();
-  const midH = Math.floor(COPIES / 2) * 24 + baseHours.indexOf(h);
-  const midM = Math.floor(COPIES / 2) * 12 + baseMins.indexOf(m);
+  const baseMins  = Array.from({ length: 12 }, (_, i) => i * 5);
 
   const hRef = useRef(null);
   const mRef = useRef(null);
-  const [hCenter, setHCenter] = useState(midH);
-  const [mCenter, setMCenter] = useState(midM);
+  const hIdx = baseHours.indexOf(h);
+  const mIdx = baseMins.indexOf(m);
 
   useEffect(() => {
-    const idx = baseHours.indexOf(h) + Math.floor(COPIES / 2) * 24;
-    hRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
-  }, [h]);
+    hRef.current?.scrollTo({ y: hIdx * ITEM_H, animated: false });
+  }, [hIdx]);
   useEffect(() => {
-    const idx = baseMins.indexOf(m) + Math.floor(COPIES / 2) * 12;
-    mRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
-  }, [m]);
+    mRef.current?.scrollTo({ y: mIdx * ITEM_H, animated: false });
+  }, [mIdx]);
 
-  const onHScroll = (e) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    setHCenter(idx);
-  };
   const onHEnd = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    setTime(baseHours[idx % 24], m);
-  };
-  const onMScroll = (e) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    setMCenter(idx);
+    onChange(`${String(baseHours[idx] ?? 0).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   };
   const onMEnd = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    setTime(h, baseMins[idx % 12]);
+    onChange(`${String(h).padStart(2, '0')}:${String(baseMins[idx] ?? 0).padStart(2, '0')}`);
   };
 
-  const setTime = (hh, mm) => {
-    onChange(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-  };
-
-  const renderWheel = (ref, items, centerIdx, onScroll, onEnd) => (
+  const renderWheel = (ref, items, startIdx, curVal, onEnd) => (
     <View style={{ width: 64, height: ITEM_H * 3, overflow: 'hidden' }}>
       <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent + '20', borderRadius: 8 }} />
       <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
@@ -181,21 +161,24 @@ function TimeWheel({ value, onChange }) {
       <ScrollView
         ref={ref}
         showsVerticalScrollIndicator={false}
-        decelerationRate={0.96}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={onEnd}
         snapToInterval={ITEM_H}
+        decelerationRate={0.95}
+        onMomentumScrollEnd={onEnd}
+        contentOffset={{ x: 0, y: startIdx * ITEM_H }}
         contentContainerStyle={{ paddingVertical: ITEM_H }}
       >
         {items.map((val, i) => {
-          const sel = i === centerIdx;
+          const sel = val === curVal;
           return (
-            <View key={i} style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
+            <TouchableOpacity key={i} onPress={() => onChange(
+              items === baseHours
+                ? `${String(val).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                : `${String(h).padStart(2, '0')}:${String(val).padStart(2, '0')}`
+            )} style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
               <Text style={{ fontSize: sel ? 20 : 15, fontWeight: sel ? '700' : '400', color: sel ? '#fff' : COLORS.text2 }}>
                 {String(val).padStart(2, '0')}
               </Text>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>
@@ -205,9 +188,9 @@ function TimeWheel({ value, onChange }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
-      {renderWheel(hRef, hours, hCenter, onHScroll, onHEnd)}
+      {renderWheel(hRef, baseHours, hIdx, h, onHEnd)}
       <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
-      {renderWheel(mRef, mins, mCenter, onMScroll, onMEnd)}
+      {renderWheel(mRef, baseMins, mIdx, m, onMEnd)}
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
     </View>
   );
