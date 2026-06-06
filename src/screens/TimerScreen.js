@@ -189,9 +189,6 @@ export default function TimerScreen() {
           <TimerCircle timeLeft={timeLeft} totalTime={displayTotal} modeColor={timerColor} label={label} />
         </View>
 
-        {/* Quote */}
-        {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
-
         {/* Count direction */}
         <TouchableOpacity style={styles.toggle} onPress={() => { if (isRunning) return; setCountUp(!countUp); setTimeLeft(!countUp ? 0 : modes[mode].minutes * 60); setTotalTime(modes[mode].minutes * 60); }}>
           <Text style={styles.toggleT}>{countUp ? '⏫ 正计时' : '⏬ 倒计时'}</Text>
@@ -209,6 +206,9 @@ export default function TimerScreen() {
         </View>
 
         <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
+
+        {/* Quote */}
+        {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 }}>
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
