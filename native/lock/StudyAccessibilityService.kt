@@ -37,18 +37,11 @@ class StudyAccessibilityService : AccessibilityService() {
             if (pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
 
             val now = System.currentTimeMillis()
-            if (now - lastBackTime < 800) return
+            if (now - lastBackTime < 300) return
             lastBackTime = now
 
-            // Launch 研途 directly - more reliable than HOME
-            val intent = packageManager.getLaunchIntentForPackage("com.kaoyan.studytimer")
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                startActivity(intent)
-            } else {
-                // Fallback to HOME
-                performGlobalAction(GLOBAL_ACTION_HOME)
-            }
+            // HOME is most reliable - system-level, can't be bypassed
+            performGlobalAction(GLOBAL_ACTION_HOME)
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
