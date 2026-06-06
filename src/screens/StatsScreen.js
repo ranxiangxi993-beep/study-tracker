@@ -13,6 +13,40 @@ import {
   getYearlyHeatmap,
 } from '../storage';
 
+// Month calendar grid
+function CalendarGrid({ year, month, data }) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay() || 7; // Mon=1..Sun=7
+  const DAYS = ['一','二','三','四','五','六','日'];
+
+  const cells = [];
+  for (let i = 1; i < firstDay; i++) cells.push(null); // empty before month start
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    cells.push({ day: d, min: Math.floor((data[ds] || 0) / 60) });
+  }
+
+  return (
+    <View style={{ paddingHorizontal: 16, marginTop: 8, alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', marginBottom: 4 }}>
+        {DAYS.map(l => <Text key={l} style={{ width: 36, textAlign: 'center', fontSize: 10, color: COLORS.text2, fontWeight: '600' }}>{l}</Text>)}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', width: 36 * 7 }}>
+        {cells.map((c, i) => (
+          <View key={i} style={{
+            width: 34, height: 34, margin: 1, borderRadius: 6, justifyContent: 'center', alignItems: 'center',
+            backgroundColor: c ? (c.min === 0 ? COLORS.card2 : c.min < 15 ? '#2a4a3a' : c.min < 30 ? '#1a6b3a' : c.min < 60 ? '#1a8b4a' : c.min < 120 ? '#2ecc71' : '#e74c3c') : 'transparent'
+          }}>
+            <Text style={{ fontSize: 11, color: c ? (c.min === 0 ? COLORS.text2 : '#fff') : 'transparent', fontWeight: c && c.min > 0 ? '700' : '400' }}>
+              {c ? c.day : ''}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const PERIODS = [
   { key: 'day',   label: '今日' },
   { key: 'week',  label: '本周' },
@@ -29,6 +63,9 @@ export default function StatsScreen() {
   const [page, setPage] = useState(0);
   const [weekData, setWeekData] = useState([]);
   const [heatmapData, setHeatmapData] = useState({});
+  const now = new Date();
+  const [selMonth, setSelMonth] = useState(now.getMonth());
+  const [selYear, setSelYear] = useState(now.getFullYear());
 
   useFocusEffect(
     useCallback(() => {
@@ -99,15 +136,36 @@ export default function StatsScreen() {
           ))}
         </View>
 
+        {/* Month/Year Nav */}
+        {period === 'month' && (
+          <View style={styles.nav}>
+            <TouchableOpacity onPress={() => setSelMonth(m => m === 0 ? 11 : m - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
+            <Text style={styles.navTitle}>{selMonth + 1}月</Text>
+            <TouchableOpacity onPress={() => setSelMonth(m => m === 11 ? 0 : m + 1)}><Text style={styles.navArrow}>▶</Text></TouchableOpacity>
+          </View>
+        )}
+        {period === 'year' && (
+          <View style={styles.nav}>
+            <TouchableOpacity onPress={() => setSelYear(y => y - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
+            <Text style={styles.navTitle}>{selYear}年</Text>
+            <TouchableOpacity onPress={() => setSelYear(y => y + 1)}><Text style={styles.navArrow}>▶</Text></TouchableOpacity>
+          </View>
+        )}
+
         {/* Pie Chart */}
         <View style={styles.chartSection}>
           <PieChart data={stats.subjects} totalSec={stats.total_sec} />
         </View>
 
+        {/* Month Calendar Grid */}
+        {period === 'month' && (
+          <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
+        )}
+
         {/* Yearly Heatmap */}
         {period === 'year' && (
           <View style={{ marginTop: 16 }}>
-            <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>🗓️ 年度学习热力图</Text>
+            <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>🗓️ {selYear}年学习热力图</Text>
             <Heatmap data={heatmapData} />
           </View>
         )}
@@ -135,7 +193,8 @@ export default function StatsScreen() {
           </View>
         ) : null}
 
-        {/* History list */}
+        {/* History list - only for today and week */}
+        {(period === 'day' || period === 'week') && (
         <View style={styles.historySection}>
           <Text style={styles.sectionTitle}>
             📋 {periodLabel}记录 · 共 {sessionsTotal} 条
@@ -171,6 +230,7 @@ export default function StatsScreen() {
             </TouchableOpacity>
           )}
         </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
