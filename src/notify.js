@@ -66,30 +66,21 @@ export function startScheduleMonitor() {
     const today = new Date().toDateString();
 
     plan.forEach(s => {
+      const subjName = SUBJECTS[s.subject]?.name || '课程';
       const [sh, sm] = s.start.split(':').map(Number);
       const [eh, em] = (s.end || s.start).split(':').map(Number);
       const startMin = sh * 60 + sm;
       const endMin = eh * 60 + em;
-      const subjName = SUBJECTS[s.subject]?.name || '课程';
 
-      const upcomingKey = `up_${s.id}_${today}`;
-      const startKey = `start_${s.id}_${today}`;
-      const endKey = `end_${s.id}_${today}`;
-
-      // 2 min before: upcoming notice
-      if (nowMin === startMin - 2 && !lastFired[upcomingKey]) {
-        lastFired[upcomingKey] = true;
-        notify('📅 即将开始', `${s.start} ${subjName} · 2分钟后开始`);
+      // 2 min before start
+      if (nowMin === startMin - 2 && !lastFired[`soon_${s.id}_${today}`]) {
+        lastFired[`soon_${s.id}_${today}`] = true;
+        notify('📅 即将开始', `${s.start} ${subjName}`);
       }
-      // At start time: started
-      if (nowMin === startMin && !lastFired[startKey]) {
-        lastFired[startKey] = true;
-        notify('⏱️ 现在开始', `${subjName} · 开始学习！`);
-      }
-      // At end time: completed
-      if (nowMin === endMin && !lastFired[endKey]) {
-        lastFired[endKey] = true;
-        notify('✅ 已完成', `${subjName} · ${s.start}-${s.end}`);
+      // 2 min before end
+      if (nowMin === endMin - 2 && !lastFired[`end_${s.id}_${today}`]) {
+        lastFired[`end_${s.id}_${today}`] = true;
+        notify('⏰ 即将结束', `${subjName} · ${s.end} 结束`);
       }
     });
   }, 30000);

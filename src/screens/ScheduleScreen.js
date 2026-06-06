@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable, FlatList } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
@@ -123,33 +123,34 @@ export default function ScheduleScreen() {
   );
 }
 
-// Time picker - clean single-scroll
+// Time picker - infinite scroll like system clock
 const ITEM_H = 44;
+const MULTIPLIER = 100;
 
 function TimeWheel({ value, onChange }) {
   const [h, m] = (value || '08:00').split(':').map(Number);
-  const baseHours = Array.from({ length: 24 }, (_, i) => i);
-  const baseMins  = Array.from({ length: 12 }, (_, i) => i * 5);
+  const hours = Array.from({ length: 24 * MULTIPLIER }, (_, i) => i % 24);
+  const mins  = Array.from({ length: 12 * MULTIPLIER }, (_, i) => (i % 12) * 5);
+  const hStart = Math.floor(MULTIPLIER / 2) * 24 + h;
+  const mStart = Math.floor(MULTIPLIER / 2) * 12 + (m / 5);
 
   const hRef = useRef(null);
   const mRef = useRef(null);
-  const hIdx = baseHours.indexOf(h);
-  const mIdx = baseMins.indexOf(m);
 
   useEffect(() => {
-    hRef.current?.scrollTo({ y: hIdx * ITEM_H, animated: false });
-  }, [hIdx]);
+    hRef.current?.scrollTo({ y: hStart * ITEM_H, animated: false });
+  }, []);
   useEffect(() => {
-    mRef.current?.scrollTo({ y: mIdx * ITEM_H, animated: false });
-  }, [mIdx]);
+    mRef.current?.scrollTo({ y: mStart * ITEM_H, animated: false });
+  }, []);
 
-  const onHEnd = (e) => {
+  const onHChange = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(baseHours[idx] ?? 0).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    onChange(`${String(idx % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   };
-  const onMEnd = (e) => {
+  const onMChange = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(h).padStart(2, '0')}:${String(baseMins[idx] ?? 0).padStart(2, '0')}`);
+    onChange(`${String(h).padStart(2, '0')}:${String((idx % 12) * 5).padStart(2, '0')}`);
   };
 
   const renderWheel = (ref, items, startIdx, curVal, onEnd) => (
@@ -157,40 +158,39 @@ function TimeWheel({ value, onChange }) {
       <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent + '20', borderRadius: 8 }} />
       <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
       <View style={{ position: 'absolute', top: ITEM_H * 2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
-
-      <ScrollView
+      <FlatList
         ref={ref}
+        data={items}
+        keyExtractor={(_, i) => String(i)}
+        renderItem={({ item: val, index: i }) => {
+          const sel = val === curVal;
+          return (
+            <View style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ fontSize: sel ? 20 : 15, fontWeight: sel ? '700' : '400', color: sel ? '#fff' : COLORS.text2 }}>
+                {String(val).padStart(2, '0')}
+              </Text>
+            </View>
+          );
+        }}
+        getItemLayout={(_, i) => ({ length: ITEM_H, offset: ITEM_H * i, index: i })}
+        initialScrollIndex={startIdx}
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_H}
         decelerationRate={0.95}
         onMomentumScrollEnd={onEnd}
-        contentOffset={{ x: 0, y: startIdx * ITEM_H }}
-        contentContainerStyle={{ paddingVertical: ITEM_H }}
-      >
-        {items.map((val, i) => {
-          const sel = val === curVal;
-          return (
-            <TouchableOpacity key={i} onPress={() => onChange(
-              items === baseHours
-                ? `${String(val).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-                : `${String(h).padStart(2, '0')}:${String(val).padStart(2, '0')}`
-            )} style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ fontSize: sel ? 20 : 15, fontWeight: sel ? '700' : '400', color: sel ? '#fff' : COLORS.text2 }}>
-                {String(val).padStart(2, '0')}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        windowSize={5}
+        maxToRenderPerBatch={10}
+        removeClippedSubviews
+      />
     </View>
   );
 
   return (
     <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
-      {renderWheel(hRef, baseHours, hIdx, h, onHEnd)}
+      {renderWheel(hRef, hours, hStart, h, onHChange)}
       <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
-      {renderWheel(mRef, baseMins, mIdx, m, onMEnd)}
+      {renderWheel(mRef, mins, mStart, m, onMChange)}
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
     </View>
   );
