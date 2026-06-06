@@ -37,12 +37,12 @@ class StudyAccessibilityService : AccessibilityService() {
             if (pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
 
             val now = System.currentTimeMillis()
-            if (now - lastBackTime < 300) return
-            lastBackTime = now
-
-            // HOME is most reliable - system-level, can't be bypassed
+            // Always go HOME, only skip Toast if within 200ms
             performGlobalAction(GLOBAL_ACTION_HOME)
-            Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
+            if (now - lastBackTime > 200) {
+                Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
+            }
+            lastBackTime = now
         }
     }
 
