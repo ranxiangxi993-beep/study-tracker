@@ -119,6 +119,10 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     // Accessibility-based lock (primary method)
     @ReactMethod fun lock(p: Promise) {
+        // Always ensure our own package is whitelisted
+        val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+        val existing = prefs.getString("whitelist", "") ?: ""
+        prefs.edit().putString("whitelist", existing).apply()
         StudyAccessibilityService.lockActive = true
         LockForegroundService.start(reactApplicationContext)
         p.resolve("accessibility")

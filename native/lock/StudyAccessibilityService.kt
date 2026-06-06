@@ -14,8 +14,6 @@ class StudyAccessibilityService : AccessibilityService() {
         var lockActive = false
     }
 
-    // Use explicit package name - HyperOS may change `packageName` property
-    private val MY_PKG = "com.kaoyan.studytimer"
     private var lastBackTime = 0L
     private var serviceReady = false
 
@@ -34,9 +32,9 @@ class StudyAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!lockActive || !serviceReady) return
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val pkg = event.packageName?.toString() ?: return
-            // Skip our own app, system apps, and whitelisted apps
-            if (pkg == MY_PKG || pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
+            val pkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() } ?: return
+            // Always allow our own app and system apps
+            if (pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
 
             val now = System.currentTimeMillis()
             if (now - lastBackTime < 800) return
@@ -63,6 +61,8 @@ class StudyAccessibilityService : AccessibilityService() {
     }
 
     private fun isWhitelisted(pkg: String): Boolean {
+        // 研途 itself is always allowed
+        if (pkg == "com.kaoyan.studytimer") return true
         val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE).getString("whitelist", "") ?: return false
         return saved.split(",").contains(pkg)
     }
