@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
 
@@ -123,85 +124,17 @@ export default function ScheduleScreen() {
   );
 }
 
-// Time picker - infinite scroll like system clock
-const ITEM_H = 44;
-const MULTIPLIER = 50;
-
-function TimeWheel({ value, onChange }) {
-  const [h, m] = (value || '08:00').split(':').map(Number);
-  const hours = Array.from({ length: 24 * MULTIPLIER }, (_, i) => i % 24);
-  const mins  = Array.from({ length: 12 * MULTIPLIER }, (_, i) => (i % 12) * 5);
-  const hStart = Math.floor(MULTIPLIER / 2) * 24 + h;
-  const mStart = Math.floor(MULTIPLIER / 2) * 12 + (m / 5);
-
-  const hRef = useRef(null);
-  const mRef = useRef(null);
-
-  useEffect(() => {
-    hRef.current?.scrollTo({ y: hStart * ITEM_H, animated: false });
-  }, []);
-  useEffect(() => {
-    mRef.current?.scrollTo({ y: mStart * ITEM_H, animated: false });
-  }, []);
-
-  const onHChange = (e) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(idx % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-  };
-  const onMChange = (e) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(h).padStart(2, '0')}:${String((idx % 12) * 5).padStart(2, '0')}`);
-  };
-
-  const renderWheel = (ref, items, startIdx, curVal, onEnd) => (
-    <View style={{ width: 64, height: ITEM_H * 3, overflow: 'hidden' }}>
-      <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent + '20', borderRadius: 8 }} />
-      <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
-      <View style={{ position: 'absolute', top: ITEM_H * 2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent + '50' }} />
-      <FlatList
-        ref={ref}
-        data={items}
-        keyExtractor={(_, i) => String(i)}
-        renderItem={({ item: val, index: i }) => {
-          const sel = val === curVal;
-          return (
-            <View style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ fontSize: sel ? 20 : 15, fontWeight: sel ? '700' : '400', color: sel ? '#fff' : COLORS.text2 }}>
-                {String(val).padStart(2, '0')}
-              </Text>
-            </View>
-          );
-        }}
-        getItemLayout={(_, i) => ({ length: ITEM_H, offset: ITEM_H * i, index: i })}
-        initialScrollIndex={startIdx}
-        showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_H}
-        decelerationRate={0.95}
-        onMomentumScrollEnd={onEnd}
-        windowSize={5}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews
-      />
-    </View>
-  );
-
-  return (
-    <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
-      {renderWheel(hRef, hours, hStart, h, onHChange)}
-      <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
-      {renderWheel(mRef, mins, mStart, m, onMChange)}
-      <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
-    </View>
-  );
-}
-
 // Inline editor
+function parseTime(t) { const [h,m] = (t||'08:00').split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; }
+function fmt(d) { return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+
 function PlanEditor({ visible, initial, onSave, onClose }) {
   const [subject, setSubject] = useState(initial?.subject || 'english');
   const [start, setStart] = useState(initial?.start || '08:00');
   const [end, setEnd] = useState(initial?.end || '10:00');
   const [customName, setCustomName] = useState(initial?.customName || '');
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
   useEffect(() => {
     if (initial) { setSubject(initial.subject || 'custom'); setStart(initial.start); setEnd(initial.end || '10:00'); setCustomName(initial.customName || ''); }
@@ -246,11 +179,31 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
             onChangeText={t => { setCustomName(t); if (t) setSubject('custom'); }}
           />
 
-          <Text style={styles.fieldLabel}>开始时间</Text>
-          <TimeWheel value={start} onChange={setStart} />
+          <Text style={styles.fieldLabel}>开始时间 · {start}</Text>
+          {showStartPicker && (
+            <DateTimePicker
+              value={parseTime(start)}
+              mode="time"
+              is24Hour={true}
+              onChange={(_, d) => { setShowStartPicker(false); if (d) setStart(fmt(d)); }}
+            />
+          )}
+          <TouchableOpacity style={styles.pickBtn} onPress={() => setShowStartPicker(true)}>
+            <Text style={styles.pickBtnT}>选择时间</Text>
+          </TouchableOpacity>
 
-          <Text style={styles.fieldLabel}>结束时间</Text>
-          <TimeWheel value={end} onChange={setEnd} />
+          <Text style={styles.fieldLabel}>结束时间 · {end}</Text>
+          {showEndPicker && (
+            <DateTimePicker
+              value={parseTime(end)}
+              mode="time"
+              is24Hour={true}
+              onChange={(_, d) => { setShowEndPicker(false); if (d) setEnd(fmt(d)); }}
+            />
+          )}
+          <TouchableOpacity style={styles.pickBtn} onPress={() => setShowEndPicker(true)}>
+            <Text style={styles.pickBtnT}>选择时间</Text>
+          </TouchableOpacity>
 
           <View style={styles.editorActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => {
@@ -315,6 +268,8 @@ const styles = StyleSheet.create({
   editorHandle: { width: 36, height: 4, backgroundColor: COLORS.card2, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   editorTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 16 },
   customInput: { backgroundColor: COLORS.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: COLORS.text, borderWidth: 1, borderColor: COLORS.card2, marginTop: 8, marginBottom: 8 },
+  pickBtn: { backgroundColor: COLORS.accent, borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginBottom: 12 },
+  pickBtnT: { color: '#fff', fontSize: 14, fontWeight: '600' },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 6, marginTop: 4 },
   pickChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: COLORS.card2, borderWidth: 1.5, borderColor: 'transparent' },
   pickChipText: { fontSize: 13, color: COLORS.text2 },
