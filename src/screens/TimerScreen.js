@@ -192,6 +192,17 @@ export default function TimerScreen() {
               ]);
               return;
             }
+            // Accessibility is on, but remind about remaining steps
+            Alert.alert('锁机已开启', '为确保小米/OPPO 不杀服务，建议也完成：\n\n🔋 电池优化 → 选研途 → 不优化\n🚀 自启动 → 找到研途 → 允许', [
+              { text: '🔋 电池优化', onPress: openBatterySettings },
+              { text: '🚀 自启动', onPress: openWhiteListSettings },
+              { text: '已全部设置好，开始锁机', onPress: async () => {
+                const result = await lockScreen();
+                if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
+                setLocked(true); Alert.alert('已锁定', '白名单外的App打开后自动返回桌面');
+              }},
+            ]);
+            return;
             const result = await lockScreen();
             if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
             setLocked(true); Alert.alert('已锁定', '白名单外的App打开后会立即弹回研途');
