@@ -234,7 +234,9 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.editorOverlay} onPress={onClose}>
+      <View style={styles.editorOverlay}>
+        {/* Only top area closes on tap */}
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={styles.editorSheet}>
           <View style={styles.editorHandle} />
           <Text style={styles.editorTitle}>{initial ? '编辑安排' : '添加安排'}</Text>
@@ -286,7 +288,7 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
             </TouchableOpacity>
           </View>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
