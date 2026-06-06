@@ -43,41 +43,63 @@ export default function TimerScreen() {
   };
   const cfg = modes[mode];
   const timerRef = useRef(null);
-  const timeRef = useRef(timeLeft);
+  const startTimeRef = useRef(null);
+  const pausedMsRef = useRef(0);
 
-  // Keep ref in sync
-  useEffect(() => { timeRef.current = timeLeft; }, [timeLeft]);
+  const getElapsed = useCallback(() => {
+    if (!startTimeRef.current) return 0;
+    return Math.floor((Date.now() - startTimeRef.current) / 1000);
+  }, []);
 
-  // ====== Timer ======
+  // ====== Timer (wall-clock accurate, survives background/app switch) ======
+  const updateDisplay = useCallback(() => {
+    const elapsed = getElapsed();
+    if (countUp) {
+      setTimeLeft(elapsed);
+    } else {
+      const remaining = Math.max(0, modes[mode].minutes * 60 - elapsed);
+      setTimeLeft(remaining);
+      if (remaining <= 0) finish();
+    }
+    setTotalTime(modes[mode].minutes * 60);
+  }, [countUp, mode, customMin, getElapsed]);
+
   const finish = useCallback(async () => {
     Vibration.vibrate([500, 200, 500, 200, 800]);
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-    const elapsed = countUp ? timeRef.current : modes[mode].minutes * 60;
+    const actual = getElapsed();
     if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
-    if (mode === 'work') celebrateComplete(SUBJECTS[activeSubject]?.name, formatDuration(elapsed));
+    startTimeRef.current = null;
+    if (mode === 'work') celebrateComplete(SUBJECTS[activeSubject]?.name, formatDuration(actual));
     else remindBreak();
-    Alert.alert(mode === 'work' ? '🎉 学习完成！' : '⏰ 休息结束', '继续加油 🔥', [{ text: '好的' }]);
-  }, [mode, sessionId, activeSubject, customMin, countUp]);
-
-  const tick = useCallback(() => {
-    if (countUp) setTimeLeft(t => t + 1);
-    else setTimeLeft(t => t <= 1 ? (finish(), 0) : t - 1);
-  }, [countUp, finish]);
+    Alert.alert(mode === 'work' ? '🎉 学习完成！' : '⏰ 休息结束', '继续加油', [{ text: '好的' }]);
+  }, [mode, sessionId, activeSubject, customMin, countUp, getElapsed]);
 
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
-    if (!isPaused && mode === 'work') setSessionId(await startSession(activeSubject));
-    if (!isPaused && countUp) setTimeLeft(0);
+    if (!isPaused) {
+      if (mode === 'work') setSessionId(await startSession(activeSubject));
+      startTimeRef.current = Date.now();
+    } else {
+      startTimeRef.current = Date.now() - pausedMsRef.current * 1000;
+      pausedMsRef.current = 0;
+    }
     setIsRunning(true); setIsPaused(false);
-    clearInterval(timerRef.current); timerRef.current = setInterval(tick, 1000);
-  }, [isRunning, isPaused, mode, activeSubject, tick, countUp]);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(updateDisplay, 200);
+    updateDisplay();
+  }, [isRunning, isPaused, mode, activeSubject, countUp, updateDisplay]);
 
-  const doPause = useCallback(() => { setIsPaused(true); clearInterval(timerRef.current); }, []);
+  const doPause = useCallback(() => {
+    setIsPaused(true); clearInterval(timerRef.current);
+    pausedMsRef.current = getElapsed();
+  }, [getElapsed]);
   const doStop = useCallback(async () => {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-    setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
+    setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
+    startTimeRef.current = null;
   }, [mode, sessionId, customMin, countUp]);
 
   const switchMode = useCallback((m) => {
@@ -85,6 +107,7 @@ export default function TimerScreen() {
       if (mode === 'work' && sessionId) { stopSession(sessionId); setSessionId(null); }
     }
     setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
+    startTimeRef.current = null;
   }, [isRunning, mode, sessionId, customMin, countUp]);
 
   const handleSubject = useCallback((key) => {
@@ -94,6 +117,7 @@ export default function TimerScreen() {
           if (sessionId) { await stopSession(sessionId); setSessionId(null); }
           clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
           setTimeLeft(countUp ? 0 : modes[mode].minutes * 60); setActiveSubject(key);
+          startTimeRef.current = null;
         }
       }]);
       return;
