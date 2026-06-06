@@ -207,9 +207,6 @@ export default function TimerScreen() {
 
         <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
 
-        {/* Quote */}
-        {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
-
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 }}>
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
             if (locked) { await unlockScreen(); setLocked(false); return; }
@@ -255,6 +252,7 @@ export default function TimerScreen() {
           {isRunning && <TouchableOpacity style={styles.end} onPress={doStop}><Text style={styles.endT}>↺ 结束</Text></TouchableOpacity>}
         </View>
 
+        {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
         <Text style={styles.hint}>长按模式卡片修改时长 · ⚙️ 设置背景和更多</Text>
       </View>
 
