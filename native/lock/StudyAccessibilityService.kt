@@ -40,11 +40,16 @@ class StudyAccessibilityService : AccessibilityService() {
             if (now - lastBackTime < 800) return
             lastBackTime = now
 
-            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Method 1: system-level Home action (works on all Android, can't be blocked)
+            val ok = performGlobalAction(GLOBAL_ACTION_HOME)
+            // Method 2: fallback to launcher Intent if global action fails
+            if (!ok) {
+                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(homeIntent)
             }
-            startActivity(homeIntent)
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
