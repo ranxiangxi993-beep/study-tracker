@@ -3,101 +3,58 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUBJECTS } from './constants';
 
-const CHAN_REMINDER = 'study_reminder';
-const CHAN_COMPLETE = 'study_complete';
+const CHAN = 'study_alert';
 
-// Request notification permission on import
 Notifications.requestPermissionsAsync();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
     shouldShowBanner: true,
   }),
 });
 
-async function ensureChannels() {
+async function ensureChannel() {
   if (Platform.OS !== 'android') return;
-  // Reminder channel：max importance + vibration + heads-up
-  await Notifications.setNotificationChannelAsync(CHAN_REMINDER, {
-    name: '学习提醒',
-    description: '日程开始前提醒',
-    importance: Notifications.AndroidImportance.MAX, // MAX > HIGH
+  await Notifications.setNotificationChannelAsync(CHAN, {
+    name: '研途提醒',
+    description: '学习日程提醒',
+    importance: Notifications.AndroidImportance.HIGH,
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    sound: 'default',
-    enableVibrate: true,
-    vibrationPattern: [0, 200, 100, 200],
-    bypassDnd: true,
-  });
-  // Completion channel
-  await Notifications.setNotificationChannelAsync(CHAN_COMPLETE, {
-    name: '学习完成',
-    description: '计时结束通知',
-    importance: Notifications.AndroidImportance.MAX,
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    sound: 'default',
-    enableVibrate: true,
-    vibrationPattern: [0, 100, 50, 200, 50, 300],
+    sound: null,
+    enableVibrate: false,
+    bypassDnd: false,
   });
 }
 
-// ====== Schedule Reminder ======
-export async function remindSchedule(subjectName, startTime) {
-  await ensureChannels();
+async function notify(title, body) {
+  await ensureChannel();
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: `📅 ${startTime} ${subjectName}`,
-      body: '该开始学习了 ✨',
-      data: { type: 'schedule_reminder' },
+      title, body,
+      data: { type: 'schedule' },
       ...(Platform.OS === 'android' ? {
-        channelId: CHAN_REMINDER,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        category: Notifications.AndroidNotificationCategory.ALARM,
+        channelId: CHAN,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
       } : {}),
     },
     trigger: null,
   });
 }
 
-// ====== Timer Complete ======
 export async function celebrateComplete(subjectName, duration) {
-  await ensureChannels();
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: '🎉 学习完成',
-      body: `${subjectName} · ${duration}`,
-      data: { type: 'timer_complete' },
-      ...(Platform.OS === 'android' ? {
-        channelId: CHAN_COMPLETE,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-      } : {}),
-    },
-    trigger: null,
-  });
+  await notify('🎉 学习完成', `${subjectName} · ${duration}`);
 }
 
-// ====== Break Reminder ======
 export async function remindBreak() {
-  await ensureChannels();
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: '☕ 休息一下',
-      body: '站起来走动，看看远处',
-      data: { type: 'break' },
-      ...(Platform.OS === 'android' ? {
-        channelId: CHAN_REMINDER,
-        priority: Notifications.AndroidNotificationPriority.DEFAULT,
-      } : {}),
-    },
-    trigger: null,
-  });
+  await notify('☕ 休息一下', '站起来走动，看看远处');
 }
 
 // ====== Schedule Monitor ======
 let scheduleTimer = null;
-let lastReminded = {};
+let lastFired = {};
 
 export function startScheduleMonitor() {
   stopScheduleMonitor();
@@ -106,25 +63,39 @@ export function startScheduleMonitor() {
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const data = await AsyncStorage.getItem('daily_plan');
     const plan = data ? JSON.parse(data) : [];
+    const today = new Date().toDateString();
+
     plan.forEach(s => {
       const [sh, sm] = s.start.split(':').map(Number);
-      const diffMin = sh * 60 + sm - nowMin;
-      if (diffMin > 0 && diffMin <= 5) {
-        const key = `${s.id}_${new Date().toDateString()}`;
-        if (lastReminded[key]) return;
-        lastReminded[key] = true;
-        remindSchedule(SUBJECTS[s.subject]?.name || '课程', s.start);
+      const [eh, em] = (s.end || s.start).split(':').map(Number);
+      const startMin = sh * 60 + sm;
+      const endMin = eh * 60 + em;
+      const subjName = SUBJECTS[s.subject]?.name || '课程';
+
+      const upcomingKey = `up_${s.id}_${today}`;
+      const startKey = `start_${s.id}_${today}`;
+      const endKey = `end_${s.id}_${today}`;
+
+      // 2 min before: upcoming notice
+      if (nowMin === startMin - 2 && !lastFired[upcomingKey]) {
+        lastFired[upcomingKey] = true;
+        notify('📅 即将开始', `${s.start} ${subjName} · 2分钟后开始`);
       }
-      // Also remind at exact start time
-      if (diffMin === 0 && !lastReminded[`${s.id}_exact_${new Date().toDateString()}`]) {
-        lastReminded[`${s.id}_exact_${new Date().toDateString()}`] = true;
-        remindSchedule(SUBJECTS[s.subject]?.name || '课程', s.start);
+      // At start time: started
+      if (nowMin === startMin && !lastFired[startKey]) {
+        lastFired[startKey] = true;
+        notify('⏱️ 现在开始', `${subjName} · 开始学习！`);
+      }
+      // At end time: completed
+      if (nowMin === endMin && !lastFired[endKey]) {
+        lastFired[endKey] = true;
+        notify('✅ 已完成', `${subjName} · ${s.start}-${s.end}`);
       }
     });
-  }, 30000); // check every 30 seconds (faster)
+  }, 30000);
 }
 
 export function stopScheduleMonitor() {
   if (scheduleTimer) { clearInterval(scheduleTimer); scheduleTimer = null; }
-  lastReminded = {};
+  lastFired = {};
 }
