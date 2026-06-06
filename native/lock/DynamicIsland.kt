@@ -20,6 +20,17 @@ object DynamicIsland {
     private var dismissRunnable: Runnable? = null
 
     fun show(ctx: Context, icon: String, title: String, sub: String) {
+        // Check overlay permission
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
+            && !android.provider.Settings.canDrawOverlays(ctx)) {
+            // Open overlay permission settings
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${ctx.packageName}")
+            ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+            ctx.startActivity(intent)
+            return
+        }
         dismiss()
         windowManager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
