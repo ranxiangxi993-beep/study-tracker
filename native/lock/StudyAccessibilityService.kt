@@ -42,13 +42,15 @@ class StudyAccessibilityService : AccessibilityService() {
             if (now - lastBackTime < 800) return
             lastBackTime = now
 
-            // Primary: system-level Home action (works on all Android versions)
-            val ok = performGlobalAction(GLOBAL_ACTION_HOME)
-            // Fallback: launcher Intent
-            if (!ok) startActivity(Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            // Launch 研途 directly - more reliable than HOME
+            val intent = packageManager.getLaunchIntentForPackage("com.kaoyan.studytimer")
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                startActivity(intent)
+            } else {
+                // Fallback to HOME
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
