@@ -80,7 +80,7 @@ export default function StatsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>📊 学习统计</Text>
+        <Text style={styles.title}>📊 学习统计 · {sessionsTotal}次</Text>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>

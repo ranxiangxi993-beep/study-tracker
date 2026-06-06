@@ -14,6 +14,7 @@ import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, 
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
 import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { nextQuote } from '../quotes';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -32,6 +33,7 @@ export default function TimerScreen() {
   const [appsList, setAppsList] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [wlPkgs, setWlPkgs] = useState([]);
+  const [quote, setQuote] = useState('');
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
   const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
@@ -86,6 +88,7 @@ export default function TimerScreen() {
       pausedMsRef.current = 0;
     }
     setIsRunning(true); setIsPaused(false);
+    if (!isPaused) setQuote(nextQuote());
     clearInterval(timerRef.current);
     timerRef.current = setInterval(updateDisplay, 200);
     updateDisplay();
@@ -185,6 +188,9 @@ export default function TimerScreen() {
         <View style={styles.timerWrap}>
           <TimerCircle timeLeft={timeLeft} totalTime={displayTotal} modeColor={timerColor} label={label} />
         </View>
+
+        {/* Quote */}
+        {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
 
         {/* Count direction */}
         <TouchableOpacity style={styles.toggle} onPress={() => { if (isRunning) return; setCountUp(!countUp); setTimeLeft(!countUp ? 0 : modes[mode].minutes * 60); setTotalTime(modes[mode].minutes * 60); }}>
@@ -344,6 +350,7 @@ const styles = StyleSheet.create({
   mtMin: { fontSize: 18, fontWeight: '800', color: COLORS.text2, marginTop: 2 },
   mtOn: { color: '#fff' },
   hint: { fontSize: 11, color: COLORS.text2, textAlign: 'center', marginTop: 16, opacity: 0.6 },
+  quoteText: { fontSize: 12, color: COLORS.text2, textAlign: 'center', marginTop: 4, opacity: 0.7, fontStyle: 'italic', paddingHorizontal: 30 },
   ctrls: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 14, gap: 10 },
   go: { paddingVertical: 14, paddingHorizontal: 44, borderRadius: 30 },
   pause: { backgroundColor: COLORS.warning },
