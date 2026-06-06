@@ -28,6 +28,11 @@ export async function openWhiteListSettings() {
   try { await L.openWhiteListSettings(); } catch (e) {}
 }
 
+export async function openBatterySettings() {
+  if (!L?.openBatterySettings) return;
+  try { await L.openBatterySettings(); } catch (e) {}
+}
+
 export async function lockScreen() {
   if (!L?.lock) return 'none';
   try {

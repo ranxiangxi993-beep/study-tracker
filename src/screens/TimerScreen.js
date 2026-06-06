@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -185,10 +185,10 @@ export default function TimerScreen() {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
             if (!hasAcc) {
-              Alert.alert('开启专注锁（两步）', '1️⃣ 开启无障碍：点「去开启」→ 已下载的服务 → 研途专注\n\n2️⃣ 加自启动白名单：点「加白名单」→ 找到研途 → 允许自启动\n\n（小米/OPPO 必须做第2步，否则服务会被系统杀死）', [
-                { text: '去开启', onPress: openAccessibilitySettings },
-                { text: '加白名单', onPress: openWhiteListSettings },
-                { text: '已设置好', onPress: () => {} },
+              Alert.alert('开启专注锁（三步）', '小米/OPPO 用户需完成以下三步，否则锁机会失效：\n\n1️⃣ 无障碍 → 已下载的服务 → 研途专注\n2️⃣ 自启动 → 找到研途 → 允许\n3️⃣ 电池优化 → 选择研途 → 不优化', [
+                { text: '1️⃣ 无障碍', onPress: openAccessibilitySettings },
+                { text: '2️⃣ 自启动', onPress: openWhiteListSettings },
+                { text: '3️⃣ 电池', onPress: openBatterySettings },
               ]);
               return;
             }

@@ -25,6 +25,21 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     }
 
     // Jump to manufacturer's autostart/permission management
+    @ReactMethod fun openBatterySettings(p: Promise) {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = android.net.Uri.parse("package:${reactApplicationContext.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactApplicationContext.startActivity(intent)
+            p.resolve(true)
+        } catch (e: Exception) {
+            // Fallback to general battery settings
+            try { reactApplicationContext.startActivity(Intent(android.provider.Settings.ACTION_BATTERY_SAVER_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); p.resolve(true) }
+            catch (e2: Exception) { p.reject("ERR", e2.message) }
+        }
+    }
+
     @ReactMethod fun openWhiteListSettings(p: Promise) {
         try {
             val intent = when (android.os.Build.BRAND.lowercase()) {
