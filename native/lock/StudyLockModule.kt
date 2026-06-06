@@ -24,6 +24,42 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         } catch (e: Exception) { promise.reject("ERR", e.message) }
     }
 
+    // Jump to manufacturer's autostart/permission management
+    @ReactMethod fun openWhiteListSettings(p: Promise) {
+        try {
+            val intent = when (android.os.Build.BRAND.lowercase()) {
+                "xiaomi", "redmi" -> Intent().apply {
+                    setComponent(android.content.ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity"))
+                }
+                "huawei" -> Intent().apply {
+                    setComponent(android.content.ComponentName(
+                        "com.huawei.systemmanager",
+                        "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
+                }
+                "oppo" -> Intent().apply {
+                    setComponent(android.content.ComponentName(
+                        "com.coloros.oppoguardelf",
+                        "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity"))
+                }
+                "vivo" -> Intent().apply {
+                    setComponent(android.content.ComponentName(
+                        "com.iqoo.secure",
+                        "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
+                }
+                else -> Intent().apply { action = android.provider.Settings.ACTION_SETTINGS }
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try { reactApplicationContext.startActivity(intent) } catch (_: Exception) {
+                reactApplicationContext.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+            p.resolve(true)
+        } catch (e: Exception) { p.reject("ERR", e.message) }
+    }
+
     @ReactMethod fun openAccessibilitySettings(p: Promise) {
         try {
             val ctx = reactApplicationContext

@@ -23,6 +23,11 @@ export async function openAccessibilitySettings() {
   try { await L.openAccessibilitySettings(); } catch (e) {}
 }
 
+export async function openWhiteListSettings() {
+  if (!L?.openWhiteListSettings) return;
+  try { await L.openWhiteListSettings(); } catch (e) {}
+}
+
 export async function lockScreen() {
   if (!L?.lock) return 'none';
   try {

@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isAccessibilityEnabled, openAccessibilitySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 
 export default function TimerScreen() {
   const [mode, setMode] = useState('work');
@@ -185,9 +185,10 @@ export default function TimerScreen() {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
             if (!hasAcc) {
-              Alert.alert('开启专注锁', '需要开启无障碍服务：\n\n跳转后点「已下载的服务」→ 打开「研途专注」', [
+              Alert.alert('开启专注锁（两步）', '1️⃣ 开启无障碍：点「去开启」→ 已下载的服务 → 研途专注\n\n2️⃣ 加自启动白名单：点「加白名单」→ 找到研途 → 允许自启动\n\n（小米/OPPO 必须做第2步，否则服务会被系统杀死）', [
                 { text: '去开启', onPress: openAccessibilitySettings },
-                { text: '取消', style: 'cancel' }
+                { text: '加白名单', onPress: openWhiteListSettings },
+                { text: '已设置好', onPress: () => {} },
               ]);
               return;
             }
