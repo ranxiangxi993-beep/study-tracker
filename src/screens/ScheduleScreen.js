@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
 
@@ -125,16 +124,69 @@ export default function ScheduleScreen() {
 }
 
 // Inline editor
-function parseTime(t) { const [h,m] = (t||'08:00').split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; }
-function fmt(d) { return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+const ITEM_H = 44;
+const COPIES = 3;
+
+function TimeWheel({ value, onChange }) {
+  const [h, m] = (value || '08:00').split(':').map(Number);
+  const baseH = Array.from({ length: 24 }, (_, i) => i);
+  const baseM = Array.from({ length: 12 }, (_, i) => i * 5);
+  const hData = Array.from({ length: COPIES }, () => baseH).flat();
+  const mData = Array.from({ length: COPIES }, () => baseM).flat();
+  const hIdx = Math.floor(COPIES/2) * 24 + h;
+  const mIdx = Math.floor(COPIES/2) * 12 + m / 5;
+
+  const renderWheel = (ref, data, idx, curVal, onSnap) => (
+    <View style={{ width: 64, height: ITEM_H * 3, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent+'20', borderRadius: 8 }} />
+      <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent+'50' }} />
+      <View style={{ position: 'absolute', top: ITEM_H*2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent+'50' }} />
+      <ScrollView
+        ref={ref}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_H}
+        disableIntervalMomentum={false}
+        decelerationRate={0.94}
+        onMomentumScrollEnd={onSnap}
+        contentOffset={{ x: 0, y: idx * ITEM_H }}
+        contentContainerStyle={{ paddingVertical: ITEM_H }}
+      >
+        {data.map((v, i) => (
+          <View key={i} style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ fontSize: v === curVal ? 20 : 15, fontWeight: v === curVal ? '700' : '400', color: v === curVal ? '#fff' : COLORS.text2 }}>
+              {String(v).padStart(2, '0')}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  const onHSnap = (e) => {
+    const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    onChange(`${String(baseH[i % 24]).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+  };
+  const onMSnap = (e) => {
+    const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    onChange(`${String(h).padStart(2,'0')}:${String((i % 12) * 5).padStart(2,'0')}`);
+  };
+
+  return (
+    <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
+      {renderWheel(useRef(), hData, hIdx, h, onHSnap)}
+      <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
+      {renderWheel(useRef(), mData, mIdx, m, onMSnap)}
+      <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
+    </View>
+  );
+}
 
 function PlanEditor({ visible, initial, onSave, onClose }) {
   const [subject, setSubject] = useState(initial?.subject || 'english');
   const [start, setStart] = useState(initial?.start || '08:00');
   const [end, setEnd] = useState(initial?.end || '10:00');
   const [customName, setCustomName] = useState(initial?.customName || '');
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
 
   useEffect(() => {
     if (initial) { setSubject(initial.subject || 'custom'); setStart(initial.start); setEnd(initial.end || '10:00'); setCustomName(initial.customName || ''); }
@@ -179,31 +231,11 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
             onChangeText={t => { setCustomName(t); if (t) setSubject('custom'); }}
           />
 
-          <Text style={styles.fieldLabel}>开始时间 · {start}</Text>
-          {showStartPicker && (
-            <DateTimePicker
-              value={parseTime(start)}
-              mode="time"
-              is24Hour={true}
-              onChange={(_, d) => { setShowStartPicker(false); if (d) setStart(fmt(d)); }}
-            />
-          )}
-          <TouchableOpacity style={styles.pickBtn} onPress={() => setShowStartPicker(true)}>
-            <Text style={styles.pickBtnT}>选择时间</Text>
-          </TouchableOpacity>
+          <Text style={styles.fieldLabel}>开始时间</Text>
+          <TimeWheel value={start} onChange={setStart} />
 
-          <Text style={styles.fieldLabel}>结束时间 · {end}</Text>
-          {showEndPicker && (
-            <DateTimePicker
-              value={parseTime(end)}
-              mode="time"
-              is24Hour={true}
-              onChange={(_, d) => { setShowEndPicker(false); if (d) setEnd(fmt(d)); }}
-            />
-          )}
-          <TouchableOpacity style={styles.pickBtn} onPress={() => setShowEndPicker(true)}>
-            <Text style={styles.pickBtnT}>选择时间</Text>
-          </TouchableOpacity>
+          <Text style={styles.fieldLabel}>结束时间</Text>
+          <TimeWheel value={end} onChange={setEnd} />
 
           <View style={styles.editorActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => {
