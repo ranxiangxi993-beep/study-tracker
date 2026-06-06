@@ -148,7 +148,7 @@ export default function StatsScreen() {
           ) : (
             sessions.map(s => {
               const subj = SUBJECTS[s.subject];
-              const time = s.start_time ? s.start_time.slice(11, 16) : '';
+              const time = s.start_time ? new Date(s.start_time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
               return (
                 <View key={s.id} style={styles.historyItem}>
                   <View style={[styles.historyDot, { backgroundColor: subj?.color || COLORS.accent }]} />

@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { COLORS } from '../constants';
 
-const CELL = 12;
+const CELL = 10;
 const GAP = 2;
 const LABELS = ['一', '', '三', '', '五', '', '日'];
 const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
@@ -75,6 +75,7 @@ export default function Heatmap({ data }) {
         </View>
 
         {/* Heatmap cells */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={styles.cells}>
           {cells.map((week, wi) => (
             <View key={wi} style={styles.weekCol}>
@@ -96,6 +97,7 @@ export default function Heatmap({ data }) {
             </View>
           ))}
         </View>
+        </ScrollView>
       </View>
 
       {/* Month labels */}
