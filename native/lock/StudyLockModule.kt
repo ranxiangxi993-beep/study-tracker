@@ -69,11 +69,13 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     // Accessibility-based lock (primary method)
     @ReactMethod fun lock(p: Promise) {
         StudyAccessibilityService.lockActive = true
+        LockForegroundService.start(reactApplicationContext)
         p.resolve("accessibility")
     }
 
     @ReactMethod fun unlock(p: Promise) {
         StudyAccessibilityService.lockActive = false
+        LockForegroundService.stop(reactApplicationContext)
         try { reactApplicationContext.currentActivity?.stopLockTask() } catch (_: Exception) {}
         p.resolve(true)
     }
