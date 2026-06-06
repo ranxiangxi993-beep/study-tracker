@@ -65,6 +65,8 @@ export function startScheduleMonitor() {
     const plan = data ? JSON.parse(data) : [];
     const today = new Date().toDateString();
 
+    // Collect all notifications first, dedup same-minute conflicts
+    const alerts = [];
     plan.forEach(s => {
       const subjName = SUBJECTS[s.subject]?.name || '课程';
       const [sh, sm] = s.start.split(':').map(Number);
@@ -72,16 +74,23 @@ export function startScheduleMonitor() {
       const startMin = sh * 60 + sm;
       const endMin = eh * 60 + em;
 
-      // 2 min before start
       if (nowMin === startMin - 2 && !lastFired[`soon_${s.id}_${today}`]) {
-        lastFired[`soon_${s.id}_${today}`] = true;
-        notify('📅 即将开始', `${s.start} ${subjName}`);
+        alerts.push({ key: `soon_${s.id}_${today}`, title: '📅 即将开始', body: `${s.start} ${subjName}`, time: startMin });
       }
-      // 2 min before end
       if (nowMin === endMin - 2 && !lastFired[`end_${s.id}_${today}`]) {
-        lastFired[`end_${s.id}_${today}`] = true;
-        notify('⏰ 即将结束', `${subjName} · ${s.end} 结束`);
+        alerts.push({ key: `end_${s.id}_${today}`, title: '⏰ 即将结束', body: `${subjName} · ${s.end} 结束`, time: endMin });
       }
+    });
+    // If same minute has both end and start, keep only the upcoming start
+    const seen = {};
+    alerts.forEach(a => {
+      if (!seen[a.time] || a.title === '📅 即将开始') {
+        seen[a.time] = a;
+      }
+    });
+    Object.values(seen).forEach(a => {
+      lastFired[a.key] = true;
+      notify(a.title, a.body);
     });
   }, 30000);
 }

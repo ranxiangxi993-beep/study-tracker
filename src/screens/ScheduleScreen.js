@@ -125,7 +125,7 @@ export default function ScheduleScreen() {
 
 // Time picker - infinite scroll like system clock
 const ITEM_H = 44;
-const MULTIPLIER = 100;
+const MULTIPLIER = 50;
 
 function TimeWheel({ value, onChange }) {
   const [h, m] = (value || '08:00').split(':').map(Number);
