@@ -15,25 +15,29 @@ class StudyAccessibilityService : AccessibilityService() {
     }
 
     private var lastBackTime = 0L
+    private var serviceReady = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        lockActive = false  // always reset on startup, prevents HyperOS auto-trigger
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
         }
+        // Grace period: ignore events for 2 seconds after connection
+        android.os.Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!lockActive) return
+        if (!lockActive || !serviceReady) return
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
             if (pkg == packageName || isSystem(pkg) || isWhitelisted(pkg)) return
 
             val now = System.currentTimeMillis()
-            if (now - lastBackTime < 500) return // debounce 0.5s
+            if (now - lastBackTime < 800) return
             lastBackTime = now
 
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -45,7 +49,13 @@ class StudyAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isSystem(pkg: String) = pkg.startsWith("com.android.") || pkg == "android"
+    private fun isSystem(pkg: String): Boolean {
+        if (pkg.startsWith("com.android.") || pkg == "android") return true
+        // Xiaomi specific system packages
+        if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
+        return false
+    }
+
     private fun isWhitelisted(pkg: String): Boolean {
         val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE).getString("whitelist", "") ?: return false
         return saved.split(",").contains(pkg)
