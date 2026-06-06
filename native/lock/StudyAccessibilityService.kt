@@ -14,19 +14,20 @@ class StudyAccessibilityService : AccessibilityService() {
         var lockActive = false
     }
 
+    // Use explicit package name - HyperOS may change `packageName` property
+    private val MY_PKG = "com.kaoyan.studytimer"
     private var lastBackTime = 0L
     private var serviceReady = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        lockActive = false  // always reset on startup, prevents HyperOS auto-trigger
+        lockActive = false
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
         }
-        // Grace period: ignore events for 2 seconds after connection
         android.os.Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
     }
 
@@ -34,31 +35,29 @@ class StudyAccessibilityService : AccessibilityService() {
         if (!lockActive || !serviceReady) return
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
-            if (pkg == packageName || isSystem(pkg) || isWhitelisted(pkg)) return
+            // Skip our own app, system apps, and whitelisted apps
+            if (pkg == MY_PKG || pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
 
             val now = System.currentTimeMillis()
             if (now - lastBackTime < 800) return
             lastBackTime = now
 
-            // Method 1: system-level Home action (works on all Android, can't be blocked)
+            // Primary: system-level Home action (works on all Android versions)
             val ok = performGlobalAction(GLOBAL_ACTION_HOME)
-            // Method 2: fallback to launcher Intent if global action fails
-            if (!ok) {
-                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(homeIntent)
-            }
+            // Fallback: launcher Intent
+            if (!ok) startActivity(Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
             Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun isSystem(pkg: String): Boolean {
-        if (pkg.startsWith("com.android.") || pkg == "android") return true
-        // Xiaomi specific system packages
+        if (pkg.isEmpty() || pkg.startsWith("com.android.") || pkg == "android") return true
         if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
-        return false
+        val knownLaunchers = setOf("com.oppo.launcher","com.huawei.android.launcher","com.sec.android.app.launcher")
+        return knownLaunchers.contains(pkg)
     }
 
     private fun isWhitelisted(pkg: String): Boolean {
