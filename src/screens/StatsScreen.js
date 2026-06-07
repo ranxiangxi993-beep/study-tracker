@@ -49,7 +49,6 @@ function CalendarGrid({ year, month, data }) {
 }
 
 const PERIODS = [
-  { key: 'day',   label: '今日' },
   { key: 'week',  label: '本周' },
   { key: 'month', label: '月度' },
   { key: 'year',  label: '年度' },
@@ -100,7 +99,7 @@ function Countdown() {
 
 export default function StatsScreen() {
   const { bgUri } = useBg();
-  const [period, setPeriod] = useState('day');
+  const [period, setPeriod] = useState('week');
   const [stats, setStats] = useState({ total_sec: 0, subjects: {} });
   const [sessions, setSessions] = useState([]);
   const [sessionsTotal, setSessionsTotal] = useState(0);
@@ -224,10 +223,9 @@ export default function StatsScreen() {
         {period === 'month' && (
           <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
         )}
-        )}
 
         {/* Week bar (for overview) */}
-        {period === 'day' || period === 'week' ? (
+        {period === 'week' ? (
           <View style={styles.weekSection}>
             <Text style={styles.sectionTitle}>📅 本周每日</Text>
             <View style={styles.weekGrid}>
@@ -249,8 +247,8 @@ export default function StatsScreen() {
           </View>
         ) : null}
 
-        {/* History list - only for today and week */}
-        {(period === 'day' || period === 'week') && (
+        {/* History list - only for week */}
+        {period === 'week' && (
         <View style={styles.historySection}>
           <Text style={styles.sectionTitle}>
             📋 {periodLabel}记录 · 共 {sessionsTotal} 条

@@ -3,7 +3,8 @@ package com.kaoyan.studytimer.lock
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
-import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 
@@ -12,94 +13,133 @@ class StudyAccessibilityService : AccessibilityService() {
     companion object {
         var instance: StudyAccessibilityService? = null
         var lockActive = false
+        val whitelist = mutableSetOf<String>()
     }
 
-    private var lastBackTime = 0L
+    private var lastToastTime = 0L
     private var serviceReady = false
+    private val lockHandler = Handler(Looper.getMainLooper())
+    private var pendingLock: Runnable? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         lockActive = false
+        val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            .getString("whitelist", "") ?: ""
+        whitelist.clear()
+        if (saved.isNotEmpty()) whitelist.addAll(saved.split(","))
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
         }
-        android.os.Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
+        Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!lockActive || !serviceReady) return
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            // Use root window package as primary source — it stays as the real
-            // foreground app even when IME/keyboard or transient dialogs pop up.
-            // Fall back to event.packageName if root window is unavailable.
-            val eventPkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() }
-            val rootPkg = rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotEmpty() }
-            val pkg = rootPkg ?: eventPkg ?: return
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-            // Always allow our own app, system apps, and whitelisted apps
-            if (pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)) return
+        val eventPkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() }
+        val rootPkg = rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotEmpty() }
+        val pkg = rootPkg ?: eventPkg ?: return
 
-            val now = System.currentTimeMillis()
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            if (now - lastBackTime > 200) {
-                Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
-            }
-            lastBackTime = now
+        if (isAllowed(pkg)) {
+            // 取消待执行的锁定 —— 已回到允许的上下文（如应用内搜索页返回）
+            pendingLock?.let { lockHandler.removeCallbacks(it) }
+            pendingLock = null
+            return
         }
+
+        // 150ms 防抖：吸收白名单应用内部页面跳转（搜索、WebView、弹窗）产生的短暂窗口事件
+        // 如果 150ms 内收到允许包的事件，上面的 cancel 会阻止锁定
+        pendingLock?.let { lockHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            pendingLock = null
+            // 再次核实当前前台窗口，避免误判
+            val nowRoot = rootInActiveWindow?.packageName?.toString() ?: ""
+            if (nowRoot.isNotEmpty() && isAllowed(nowRoot)) return@Runnable
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            val now = System.currentTimeMillis()
+            if (now - lastToastTime > 1000) {
+                Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
+                lastToastTime = now
+            }
+        }
+        pendingLock = runnable
+        lockHandler.postDelayed(runnable, 150)
     }
+
+    private fun isAllowed(pkg: String) =
+        pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)
 
     private fun isSystem(pkg: String): Boolean {
         if (pkg.isEmpty() || pkg == "android") return true
-        // AOSP / system
+        // AOSP 系统
         if (pkg.startsWith("com.android.")) return true
-        // Google system apps (Gboard, WebView, Play Services, etc.)
+        // Google 系统组件
         if (pkg.startsWith("com.google.android.")) return true
-        // Major OEM system UIs
+        // 小米 / Redmi / MIUI
         if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
+        if (pkg.startsWith("com.lbe.security.")) return true   // MIUI 应用锁解锁界面
+        // OPPO / ColorOS / Realme
         if (pkg.startsWith("com.oppo.") || pkg.startsWith("com.coloros.")) return true
-        if (pkg.startsWith("com.huawei.") || pkg.startsWith("com.hihon.")) return true
-        if (pkg.startsWith("com.samsung.") || pkg.startsWith("com.sec.")) return true
-        if (pkg.startsWith("com.vivo.") || pkg.startsWith("com.bbk.")) return true
-        if (pkg.startsWith("com.oneplus.")) return true
         if (pkg.startsWith("com.realme.")) return true
+        // 华为 / Honor
+        if (pkg.startsWith("com.huawei.") || pkg.startsWith("com.hihon.")) return true
+        if (pkg.startsWith("com.honor.")) return true
+        // 三星
+        if (pkg.startsWith("com.samsung.") || pkg.startsWith("com.sec.")) return true
+        // vivo / iQOO
+        if (pkg.startsWith("com.vivo.") || pkg.startsWith("com.bbk.")) return true
+        // OnePlus
+        if (pkg.startsWith("com.oneplus.")) return true
+        // 魅族
         if (pkg.startsWith("com.meizu.")) return true
+        // 联想 / ZUK
         if (pkg.startsWith("com.zui.") || pkg.startsWith("com.lenovo.")) return true
+        // 华硕
         if (pkg.startsWith("com.asus.")) return true
-        if (pkg.startsWith("com.lge.")) return true
-        if (pkg.startsWith("com.sony.")) return true
-        if (pkg.startsWith("com.nothing.")) return true
-        // Known system components
+        // LG / 索尼 / Nothing
+        if (pkg.startsWith("com.lge.") || pkg.startsWith("com.sony.") || pkg.startsWith("com.nothing.")) return true
+
         val knownSystem = setOf(
-            "android",
-            // Launchers
-            "com.oppo.launcher", "com.huawei.android.launcher", "com.sec.android.app.launcher",
-            "com.miui.home", "com.coloros.launcher",
-            // Common input methods (IME)
+            // 常见桌面启动器
+            "com.oppo.launcher", "com.huawei.android.launcher",
+            "com.sec.android.app.launcher", "com.miui.home", "com.coloros.launcher",
+            "com.google.android.apps.nexuslauncher",
+            // 输入法
             "com.google.android.inputmethod.latin",
             "com.iflytek.inputmethod", "com.sohu.inputmethod.sogou",
             "com.baidu.input", "com.baidu.input_mi",
             "com.touchtype.swiftkey", "com.swiftkey.swiftkeyconfigurator",
             // WebView
             "com.google.android.webview", "com.android.webview",
-            // Permission / settings dialogs
+            // 权限 / 安装 / 系统 UI
             "com.android.permissioncontroller", "com.google.android.permissioncontroller",
             "com.google.android.packageinstaller", "com.android.packageinstaller",
-            // System UI
-            "com.android.systemui", "com.google.android.apps.nexuslauncher",
+            "com.android.systemui",
+            // 各厂商应用锁 / 安全中心
+            "com.iqoo.secure",                  // vivo 应用锁
+            "com.qiku.security",                // 360 / 奇酷
+            "com.yulong.android.security",      // 酷派
+            "com.coloros.safecenter",           // OPPO 安全中心
+            "com.miui.securitycenter",          // 小米安全中心
         )
         return knownSystem.contains(pkg)
     }
 
     private fun isWhitelisted(pkg: String): Boolean {
-        // 研途 itself is always allowed
         if (pkg == "com.kaoyan.studytimer") return true
-        val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE).getString("whitelist", "") ?: return false
-        return saved.split(",").contains(pkg)
+        return whitelist.contains(pkg)
     }
 
     override fun onInterrupt() {}
-    override fun onDestroy() { instance = null; super.onDestroy() }
+
+    override fun onDestroy() {
+        instance = null
+        pendingLock?.let { lockHandler.removeCallbacks(it) }
+        super.onDestroy()
+    }
 }
