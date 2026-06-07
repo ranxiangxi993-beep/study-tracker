@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import PieChart from '../components/PieChart';
-import Heatmap from '../components/Heatmap';
+
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
 import {
@@ -175,13 +175,8 @@ export default function StatsScreen() {
 
         {/* Month Calendar Grid */}
         {period === 'month' && (
-          <>
-            <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
-            <View style={{ marginTop: 16 }}>
-              <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>🗓️ {selYear}年学习热力图</Text>
-              <Heatmap data={heatmapData} year={selYear} />
-            </View>
-          </>
+          <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
+        )}
         )}
 
         {/* Week bar (for overview) */}
