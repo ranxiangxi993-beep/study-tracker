@@ -50,9 +50,48 @@ function CalendarGrid({ year, month, data }) {
 const PERIODS = [
   { key: 'day',   label: '今日' },
   { key: 'week',  label: '本周' },
-  { key: 'month', label: '本月' },
-  { key: 'year',  label: '今年' },
+  { key: 'month', label: '月度' },
+  { key: 'year',  label: '年度' },
 ];
+
+const KAOYAN_DATE = new Date(2026, 11, 20); // 2026年12月20日
+
+function Countdown() {
+  const [now, setNow] = useState(new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const diff = KAOYAN_DATE - now;
+  const days = Math.max(0, Math.ceil(diff / 86400000));
+  const hours = now.getHours();
+  const mins = now.getMinutes();
+  const total = KAOYAN_DATE - new Date(2026, 5, 0); // June 1 start
+  const pct = Math.min(100, Math.max(0, Math.round((1 - diff / total) * 100)));
+
+  return (
+    <View style={{ marginHorizontal: 20, marginTop: 16, backgroundColor: COLORS.card, borderRadius: 16, padding: 20, alignItems: 'center' }}>
+      <Text style={{ fontSize: 13, color: COLORS.text2, marginBottom: 4 }}>🎯 2027 考研倒计时</Text>
+      <Text style={{ fontSize: 56, fontWeight: '900', color: COLORS.text, letterSpacing: 2 }}>{days}</Text>
+      <Text style={{ fontSize: 14, color: COLORS.text2, marginBottom: 12 }}>天</Text>
+      <View style={{ flexDirection: 'row', gap: 24, marginBottom: 12 }}>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 22, fontWeight: '700', color: COLORS.text }}>{hours}</Text>
+          <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
+        </View>
+        <Text style={{ fontSize: 22, fontWeight: '300', color: COLORS.text2, lineHeight: 40 }}>:</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 22, fontWeight: '700', color: COLORS.text }}>{mins}</Text>
+          <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
+        </View>
+      </View>
+      <View style={{ width: '100%', height: 6, backgroundColor: COLORS.card2, borderRadius: 3, overflow: 'hidden' }}>
+        <View style={{ width: `${pct}%`, height: '100%', backgroundColor: '#e74c3c', borderRadius: 3 }} />
+      </View>
+      <Text style={{ fontSize: 12, color: COLORS.text2, marginTop: 8 }}>{pct}% · 胜利就在前方</Text>
+    </View>
+  );
+}
 
 export default function StatsScreen() {
   const { bgUri } = useBg();
@@ -172,6 +211,9 @@ export default function StatsScreen() {
         <View style={styles.chartSection}>
           <PieChart data={stats.subjects} totalSec={stats.total_sec} />
         </View>
+
+        {/* Countdown - year view only */}
+        {period === 'year' && <Countdown />}
 
         {/* Month Calendar Grid */}
         {period === 'month' && (
