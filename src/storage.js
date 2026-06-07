@@ -112,15 +112,18 @@ export async function getTotalStats() {
   return { total_sec: completed.reduce((sum, s) => sum + s.duration, 0), subjects: bySubject };
 }
 
-// Get per-day study seconds for the entire year (for heatmap)
-export async function getYearlyHeatmap() {
+// Get per-day study seconds for a year (for heatmap)
+export async function getYearlyHeatmap(year) {
   const sessions = await getSessions();
   const now = new Date();
-  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const targetYear = year || now.getFullYear();
+  const yearStart = new Date(targetYear, 0, 1);
+  // For current year, only show up to today; for past years, full year
+  const endDate = targetYear === now.getFullYear() ? now : new Date(targetYear, 11, 31);
   const days = {};
 
   // Initialize all days of the year with 0
-  for (let d = new Date(yearStart); d <= now; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(yearStart); d <= endDate; d.setDate(d.getDate() + 1)) {
     const key = localDate(d);
     days[key] = 0;
   }

@@ -17,16 +17,19 @@ function getColor(minutes) {
   return '#e74c3c';
 }
 
-function buildYearGrid(data) {
+function buildYearGrid(data, year) {
   const now = new Date();
-  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const targetYear = year || now.getFullYear();
+  const isCurrentYear = targetYear === now.getFullYear();
+  const yearStart = new Date(targetYear, 0, 1);
+  const yearEnd = isCurrentYear ? now : new Date(targetYear, 11, 31);
   const firstDay = new Date(yearStart);
   while (firstDay.getDay() !== 1) firstDay.setDate(firstDay.getDate() - 1);
 
   const weeks = [];
   let currentWeek = [];
   let d = new Date(firstDay);
-  while (d <= now) {
+  while (d <= yearEnd) {
     const dateStr = d.toISOString().slice(0, 10);
     currentWeek.push({ date: dateStr, minutes: Math.floor((data[dateStr] || 0) / 60), month: d.getMonth() });
     if (d.getDay() === 0) { weeks.push([...currentWeek]); currentWeek = []; }
@@ -72,8 +75,8 @@ function renderRow(weeks) {
   );
 }
 
-export default function Heatmap({ data }) {
-  const { h1, h2 } = useMemo(() => buildYearGrid(data), [data]);
+export default function Heatmap({ data, year }) {
+  const { h1, h2 } = useMemo(() => buildYearGrid(data, year), [data, year]);
   return (
     <View style={styles.container}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 4 }}>

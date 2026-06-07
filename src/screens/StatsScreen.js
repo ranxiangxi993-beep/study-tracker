@@ -89,7 +89,7 @@ export default function StatsScreen() {
       getHistoryCount(),
       getWeekStats(),
     ]);
-    getYearlyHeatmap().then(setHeatmapData);
+    getYearlyHeatmap(selYear).then(setHeatmapData);
     setStats(periodStats);
     setSessions(hist);
     setSessionsTotal(count);
@@ -144,14 +144,22 @@ export default function StatsScreen() {
           ))}
         </View>
 
-        {/* Month/Year Nav */}
+        {/* Month Nav: year row + month row */}
         {period === 'month' && (
-          <View style={styles.nav}>
-            <TouchableOpacity onPress={() => setSelMonth(m => m === 0 ? 11 : m - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
-            <Text style={styles.navTitle}>{selMonth + 1}月</Text>
-            <TouchableOpacity onPress={() => setSelMonth(m => m === 11 ? 0 : m + 1)}><Text style={styles.navArrow}>▶</Text></TouchableOpacity>
+          <View style={{ alignItems: 'center', marginTop: 8 }}>
+            <View style={styles.navRow}>
+              <TouchableOpacity onPress={() => setSelYear(y => y - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
+              <Text style={styles.navTitle}>{selYear}年</Text>
+              <TouchableOpacity onPress={() => setSelYear(y => y + 1)}><Text style={styles.navArrow}>▶</Text></TouchableOpacity>
+            </View>
+            <View style={styles.navRow}>
+              <TouchableOpacity onPress={() => setSelMonth(m => m === 0 ? 11 : m - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
+              <Text style={styles.navTitle}>{selMonth + 1}月</Text>
+              <TouchableOpacity onPress={() => setSelMonth(m => m === 11 ? 0 : m + 1)}><Text style={styles.navArrow}>▶</Text></TouchableOpacity>
+            </View>
           </View>
         )}
+        {/* Year Nav */}
         {period === 'year' && (
           <View style={styles.nav}>
             <TouchableOpacity onPress={() => setSelYear(y => y - 1)}><Text style={styles.navArrow}>◀</Text></TouchableOpacity>
@@ -167,15 +175,13 @@ export default function StatsScreen() {
 
         {/* Month Calendar Grid */}
         {period === 'month' && (
-          <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
-        )}
-
-        {/* Yearly Heatmap */}
-        {period === 'year' && (
-          <View style={{ marginTop: 16 }}>
-            <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>🗓️ {selYear}年学习热力图</Text>
-            <Heatmap data={heatmapData} />
-          </View>
+          <>
+            <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>🗓️ {selYear}年学习热力图</Text>
+              <Heatmap data={heatmapData} year={selYear} />
+            </View>
+          </>
         )}
 
         {/* Week bar (for overview) */}
@@ -259,6 +265,10 @@ const styles = StyleSheet.create({
   periodTabActive: { backgroundColor: COLORS.card2 },
   periodTabText: { fontSize: 13, fontWeight: '600', color: COLORS.text2 },
   periodTabTextActive: { color: '#fff' },
+  nav: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 },
+  navRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16, marginVertical: 2 },
+  navArrow: { fontSize: 16, color: COLORS.text2, paddingHorizontal: 8, paddingVertical: 4 },
+  navTitle: { fontSize: 15, fontWeight: '600', color: COLORS.text, minWidth: 72, textAlign: 'center' },
   chartSection: { alignItems: 'center', paddingTop: 20, paddingBottom: 0 },
   breakdown: { paddingHorizontal: 20, marginTop: 4 },
   breakdownItem: {
