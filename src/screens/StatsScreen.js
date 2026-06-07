@@ -7,6 +7,7 @@ import PieChart from '../components/PieChart';
 
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
+import { nextQuote } from '../quotes';
 import {
   getPeriodStats, getHistory, getHistoryCount,
   deleteSession, formatDuration, getWeekStats,
@@ -58,6 +59,7 @@ const KAOYAN_DATE = new Date(2026, 11, 20); // 2026年12月20日
 
 function Countdown() {
   const [now, setNow] = useState(new Date());
+  const [quote] = useState(() => nextQuote());
   React.useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(t);
@@ -66,7 +68,7 @@ function Countdown() {
   const days = Math.max(0, Math.ceil(diff / 86400000));
   const hours = now.getHours();
   const mins = now.getMinutes();
-  const total = KAOYAN_DATE - new Date(2026, 5, 0); // June 1 start
+  const total = KAOYAN_DATE - new Date(2026, 5, 0);
   const pct = Math.min(100, Math.max(0, Math.round((1 - diff / total) * 100)));
 
   return (
@@ -74,7 +76,7 @@ function Countdown() {
       <Text style={{ fontSize: 13, color: COLORS.text2, marginBottom: 4 }}>🎯 2027 考研倒计时</Text>
       <Text style={{ fontSize: 56, fontWeight: '900', color: COLORS.text, letterSpacing: 2 }}>{days}</Text>
       <Text style={{ fontSize: 14, color: COLORS.text2, marginBottom: 12 }}>天</Text>
-      <View style={{ flexDirection: 'row', gap: 24, marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', gap: 24, marginBottom: 16 }}>
         <View style={{ alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontWeight: '700', color: COLORS.text }}>{hours}</Text>
           <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
@@ -89,6 +91,9 @@ function Countdown() {
         <View style={{ width: `${pct}%`, height: '100%', backgroundColor: '#e74c3c', borderRadius: 3 }} />
       </View>
       <Text style={{ fontSize: 12, color: COLORS.text2, marginTop: 8 }}>{pct}% · 胜利就在前方</Text>
+      <View style={{ marginTop: 14, backgroundColor: COLORS.card2, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, width: '100%' }}>
+        <Text style={{ fontSize: 12, color: COLORS.text2, textAlign: 'center', lineHeight: 18 }}>「{quote}」</Text>
+      </View>
     </View>
   );
 }
