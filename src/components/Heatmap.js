@@ -38,9 +38,15 @@ function buildYearGrid(data, year) {
   if (currentWeek.length > 0) weeks.push([...currentWeek]);
 
   // Split into H1 (Jan-Jun) and H2 (Jul-Dec)
-  // Find where July starts
-  const h1Weeks = weeks.filter(w => w[0]?.month < 6);
-  const h2Weeks = weeks.filter(w => w[0]?.month >= 6);
+  // Use the first day within the target year to classify, NOT w[0]
+  // (w[0] can be Dec of prev year due to calendar padding)
+  const h1Weeks = [];
+  const h2Weeks = [];
+  weeks.forEach(w => {
+    const inYear = w.find(d => d.date >= `${targetYear}-01-01` && d.date <= `${targetYear}-12-31`);
+    if (inYear && inYear.month >= 6) h2Weeks.push(w);
+    else h1Weeks.push(w);
+  });
 
   return { h1: h1Weeks, h2: h2Weeks };
 }
