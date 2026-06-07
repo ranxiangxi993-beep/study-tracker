@@ -30,9 +30,12 @@ class StudyAccessibilityService : AccessibilityService() {
         whitelist.clear()
         if (saved.isNotEmpty()) whitelist.addAll(saved.split(","))
         serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            // TYPE_WINDOW_STATE_CHANGED: Activity/Screen切换
+            // TYPE_WINDOWS_CHANGED: 悬浮窗、画中画、系统弹层等
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                         AccessibilityEvent.TYPE_WINDOWS_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 100
+            notificationTimeout = 50
         }
         Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
     }
@@ -68,7 +71,7 @@ class StudyAccessibilityService : AccessibilityService() {
             }
         }
         pendingLock = runnable
-        lockHandler.postDelayed(runnable, 150)
+        lockHandler.postDelayed(runnable, 80)
     }
 
     private fun isAllowed(pkg: String) =
