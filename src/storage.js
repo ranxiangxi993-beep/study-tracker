@@ -5,7 +5,7 @@ const SESSIONS_KEY = 'study_sessions';
 const GOALS_KEY = 'study_goals';
 
 // Local date helper (UTC+8 safe, unlike toISOString)
-function localDate(d) { const t = d || new Date(); return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
+export function localDate(d) { const t = d || new Date(); return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 
 // ====== Sessions ======
 
@@ -212,6 +212,19 @@ export async function getHistory(limit = 30, offset = 0) {
 export async function getHistoryCount() {
   const sessions = await getSessions();
   return sessions.filter(s => s.duration > 0).length;
+}
+
+export async function getHistoryInRange(startDate, endDate, limit = 30, offset = 0) {
+  const sessions = await getSessions();
+  return sessions
+    .filter(s => s.duration > 0 && s.date >= startDate && s.date <= endDate)
+    .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
+    .slice(offset, offset + limit);
+}
+
+export async function getHistoryCountInRange(startDate, endDate) {
+  const sessions = await getSessions();
+  return sessions.filter(s => s.duration > 0 && s.date >= startDate && s.date <= endDate).length;
 }
 
 // ====== Goals ======

@@ -508,4 +508,15 @@ export function nextQuote() {
   return shuffled[index++];
 }
 
+// Returns the same quote all day, regardless of how many times called or component remounts
+export function getDailyQuote() {
+  const d = new Date();
+  const key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  let h = key;
+  h = ((h >> 16) ^ h) * 0x45d9f3b | 0;
+  h = ((h >> 16) ^ h) * 0x45d9f3b | 0;
+  h = (h >> 16) ^ h;
+  return QUOTES[Math.abs(h) % QUOTES.length];
+}
+
 export const TOTAL_QUOTES = QUOTES.length;

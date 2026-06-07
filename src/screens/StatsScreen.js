@@ -8,11 +8,12 @@ import PieChart from '../components/PieChart';
 
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
-import { nextQuote } from '../quotes';
+import { nextQuote, getDailyQuote } from '../quotes';
 import {
   getPeriodStats, getHistory, getHistoryCount,
+  getHistoryInRange, getHistoryCountInRange,
   deleteSession, formatDuration, getWeekStats,
-  getYearlyHeatmap, getStatsInRange,
+  getYearlyHeatmap, getStatsInRange, localDate,
 } from '../storage';
 
 // Month calendar grid
@@ -67,7 +68,7 @@ const PHASES = [
 
 function Countdown() {
   const [now, setNow] = useState(new Date());
-  const [quote] = useState(() => nextQuote());
+  const [quote] = useState(() => getDailyQuote());
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -216,6 +217,14 @@ const cdStyles = StyleSheet.create({
   },
 });
 
+function getWeekRange() {
+  const now = new Date();
+  const day = now.getDay() || 7;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - day + 1);
+  return { start: localDate(monday), end: localDate(now) };
+}
+
 export default function StatsScreen() {
   const { bgUri } = useBg();
   const [period, setPeriod] = useState('week');
@@ -246,9 +255,11 @@ export default function StatsScreen() {
     } else {
       periodStats = await getPeriodStats(period);
     }
+
+    const { start: wStart, end: wEnd } = getWeekRange();
     const [hist, count, week] = await Promise.all([
-      getHistory(20, 0),
-      getHistoryCount(),
+      getHistoryInRange(wStart, wEnd, 20, 0),
+      getHistoryCountInRange(wStart, wEnd),
       getWeekStats(),
     ]);
     getYearlyHeatmap(selYear).then(setHeatmapData);
@@ -261,7 +272,8 @@ export default function StatsScreen() {
 
   const loadMoreHistory = async () => {
     const nextPage = page + 1;
-    const more = await getHistory(20, nextPage * 20);
+    const { start: wStart, end: wEnd } = getWeekRange();
+    const more = await getHistoryInRange(wStart, wEnd, 20, nextPage * 20);
     setSessions(prev => [...prev, ...more]);
     setPage(nextPage);
   };
