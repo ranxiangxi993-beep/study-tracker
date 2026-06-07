@@ -10,12 +10,6 @@
     "plugins": [
       "expo-notifications"
     ],
-    "updates": {
-      "url": "https://u.expo.dev/c4f0c2a3-b15a-4d71-8c9b-694c476e0a88",
-      "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
-    },
-    "runtimeVersion": "1.0.0",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kaoyan.studytimer"
