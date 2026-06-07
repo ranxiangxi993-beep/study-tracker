@@ -14,6 +14,9 @@ jobs:
           java-version: 17
       - run: npm install
       - run: npx expo prebuild --platform android
+      # expo SDK 54 prebuild generates Kotlin 1.9.x, but expo-updates 56 requires Kotlin 2.1.x
+      # Pin Kotlin to 2.1.0 in the generated build.gradle before compiling
+      - run: sed -i "s|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0')|" android/build.gradle
       - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml android/app/src/main/res/values
       - run: cp native/lock/*.kt android/app/src/main/java/com/kaoyan/studytimer/lock/
       - run: cp native/res/xml/accessibility_service_config.xml android/app/src/main/res/xml/
