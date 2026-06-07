@@ -20,6 +20,7 @@ class StudyAccessibilityService : AccessibilityService() {
     private var serviceReady = false
     private val lockHandler = Handler(Looper.getMainLooper())
     private var pendingLock: Runnable? = null
+    private var lastAllowedTime = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -49,20 +50,24 @@ class StudyAccessibilityService : AccessibilityService() {
         val pkg = rootPkg ?: eventPkg ?: return
 
         if (isAllowed(pkg)) {
-            // 取消待执行的锁定 —— 已回到允许的上下文（如应用内搜索页返回）
+            lastAllowedTime = System.currentTimeMillis()
             pendingLock?.let { lockHandler.removeCallbacks(it) }
             pendingLock = null
             return
         }
 
-        // 150ms 防抖：吸收白名单应用内部页面跳转（搜索、WebView、弹窗）产生的短暂窗口事件
-        // 如果 150ms 内收到允许包的事件，上面的 cancel 会阻止锁定
+        // 刚刚（500ms内）切换自白名单app，这个陌生包名很可能是系统应用锁的密码界面
+        // 给 3000ms 等用户输完密码，白名单app回到前台后上面的 cancel 会取消锁定
+        val delay = if (System.currentTimeMillis() - lastAllowedTime < 500L) 3000L else 80L
+
         pendingLock?.let { lockHandler.removeCallbacks(it) }
         val runnable = Runnable {
             pendingLock = null
-            // 再次核实当前前台窗口，避免误判
             val nowRoot = rootInActiveWindow?.packageName?.toString() ?: ""
-            if (nowRoot.isNotEmpty() && isAllowed(nowRoot)) return@Runnable
+            if (nowRoot.isNotEmpty() && isAllowed(nowRoot)) {
+                lastAllowedTime = System.currentTimeMillis()
+                return@Runnable
+            }
             performGlobalAction(GLOBAL_ACTION_HOME)
             val now = System.currentTimeMillis()
             if (now - lastToastTime > 1000) {
@@ -71,7 +76,7 @@ class StudyAccessibilityService : AccessibilityService() {
             }
         }
         pendingLock = runnable
-        lockHandler.postDelayed(runnable, 80)
+        lockHandler.postDelayed(runnable, delay)
     }
 
     private fun isAllowed(pkg: String) =
