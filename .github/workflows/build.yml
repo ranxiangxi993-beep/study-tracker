@@ -34,10 +34,23 @@ jobs:
       - run: sed -i 's|// add(MyReactNativePackage())|add(StudyLockPackage())|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
       - run: cd android && ./gradlew assembleRelease
 
+      - name: Find and verify APK
+        run: |
+          echo "=== Searching for APK ==="
+          find android -name "*.apk" 2>/dev/null
+          APK_PATH=$(find android -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "Found APK: $APK_PATH ($(du -sh $APK_PATH | cut -f1))"
+
       - name: Package release assets
         run: |
           VERSION_CODE=$(node -p "require('./app.json').expo.android.versionCode || 1")
           echo "{\"versionCode\":$VERSION_CODE}" > version.json
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
       - name: Publish GitHub Release
         env:
@@ -45,7 +58,12 @@ jobs:
         run: |
           gh release delete latest-build --yes 2>/dev/null || true
           gh release create latest-build \
-            --title "Latest Build ($(date '+%Y-%m-%d %H:%M'))" \
-            --notes "Commit: ${{ github.sha }}" \
-            android/app/build/outputs/apk/release/app-release.apk \
+            --title "研途 v${{ env.VERSION_CODE }} ($(date '+%Y-%m-%d %H:%M'))" \
+            --notes "### 下载安装
+          1. 点击下方 \`app-release.apk\` 下载
+          2. 手机允许「安装未知来源应用」后安装
+
+          **版本号**: ${{ env.VERSION_CODE }}
+          **提交**: ${{ github.sha }}" \
+            "${{ env.APK_PATH }}#app-release.apk" \
             version.json
