@@ -16,7 +16,7 @@ import { celebrateComplete, remindBreak } from '../notify';
 import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
-export default function TimerScreen() {
+export default function TimerScreen({ navigation }) {
   const [mode, setMode] = useState('work');
   const [activeSubject, setActiveSubject] = useState('english');
   const [timeLeft, setTimeLeft] = useState(TIMER_MODES.work.minutes * 60);
@@ -37,6 +37,8 @@ export default function TimerScreen() {
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
   const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
+  const [cdDays, setCdDays] = useState(null);
+  const [cdStudied, setCdStudied] = useState(null);
 
   const modes = {
     work:  { ...TIMER_MODES.work,  minutes: customMin.work },
@@ -154,6 +156,17 @@ export default function TimerScreen() {
 
   // Init
   useEffect(() => {
+    const refreshCd = () => {
+      const target = new Date(2026, 11, 20, 9, 0, 0);
+      const now = new Date();
+      const remain = Math.max(0, target - now);
+      setCdDays(Math.floor(remain / 86400000));
+      AsyncStorage.getItem('kaoyan_study_start').then(v => {
+        if (v) setCdStudied(Math.floor((now - new Date(v)) / 86400000));
+      });
+    };
+    refreshCd();
+    const cdTimer = setInterval(refreshCd, 60000); // 每分钟更新天数
     AsyncStorage.getItem('custom_durations').then(d => {
       if (d) { const v = JSON.parse(d); setCustomMin(v); setTimeLeft(v.work * 60); setTotalTime(v.work * 60); }
     });
@@ -165,7 +178,7 @@ export default function TimerScreen() {
         setTimeLeft(Math.max(0, TIMER_MODES.work.minutes * 60 - el)); setTotalTime(TIMER_MODES.work.minutes * 60); }
     });
     getStreak().then(setStreak);
-    return () => clearInterval(timerRef.current);
+    return () => { clearInterval(timerRef.current); clearInterval(cdTimer); };
   }, []);
 
   const timerColor = mode === 'work' ? accentColor : cfg.color;
@@ -183,6 +196,16 @@ export default function TimerScreen() {
         <Text style={styles.ttl}>📚 研途</Text>
         <View style={styles.sb}><Text style={styles.sbt}>🔥 {streak}天</Text></View>
       </View>
+
+      {cdDays !== null && (
+        <TouchableOpacity style={styles.cdBar} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.7}>
+          <Text style={styles.cdBarText}>
+            🎯 还有 {cdDays} 天
+            {cdStudied !== null ? `  ·  已备考 ${cdStudied} 天` : ''}
+          </Text>
+          <Text style={styles.cdArrow}>›</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.body}>
         <View style={styles.timerWrap}>
@@ -331,8 +354,11 @@ export default function TimerScreen() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  body: { flex: 1, alignItems: 'center', paddingTop: 90, paddingHorizontal: 16 },
+  body: { flex: 1, alignItems: 'center', paddingTop: 116, paddingHorizontal: 16 },
   hd: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 8 },
+  cdBar: { position: 'absolute', top: Platform.OS === 'android' ? 88 : 100, left: 0, right: 0, zIndex: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 20, backgroundColor: 'rgba(255,107,107,0.08)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,107,107,0.12)' },
+  cdBarText: { fontSize: 12, color: 'rgba(255,180,180,0.85)', fontWeight: '600', letterSpacing: 0.3 },
+  cdArrow: { fontSize: 14, color: 'rgba(255,180,180,0.5)', marginLeft: 6 },
   timerWrap: { marginBottom: 8 },
   gear: { fontSize: 22, color: COLORS.text2 },
   ttl: { fontSize: 20, fontWeight: '700', color: COLORS.text },

@@ -3,6 +3,7 @@ package com.kaoyan.studytimer.lock
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -31,19 +32,20 @@ class StudyAccessibilityService : AccessibilityService() {
         whitelist.clear()
         if (saved.isNotEmpty()) whitelist.addAll(saved.split(","))
         serviceInfo = AccessibilityServiceInfo().apply {
-            // TYPE_WINDOW_STATE_CHANGED: Activity/Screen切换
-            // TYPE_WINDOWS_CHANGED: 悬浮窗、画中画、系统弹层等
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                          AccessibilityEvent.TYPE_WINDOWS_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 50
+            flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
         Handler(mainLooper).postDelayed({ serviceReady = true }, 2000)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!lockActive || !serviceReady) return
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val eventType = event?.eventType ?: return
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
 
         val eventPkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() }
         val rootPkg = rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotEmpty() }
@@ -56,9 +58,17 @@ class StudyAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 刚刚（500ms内）切换自白名单app，这个陌生包名很可能是系统应用锁的密码界面
-        // 给 3000ms 等用户输完密码，白名单app回到前台后上面的 cancel 会取消锁定
-        val delay = if (System.currentTimeMillis() - lastAllowedTime < 500L) 3000L else 80L
+        // 检查整个窗口栈——如果白名单 App 的窗口仍在栈中（比如被密码弹窗盖住），
+        // 则不锁定。这是系统应用锁密码弹窗触发误锁的根本修复。
+        if (hasAllowedWindowInStack()) {
+            pendingLock?.let { lockHandler.removeCallbacks(it) }
+            pendingLock = null
+            return
+        }
+
+        // 刚离开白名单 App 的 300ms 内给窗口栈一点时间更新，其余立即踢出
+        val sinceAllowed = System.currentTimeMillis() - lastAllowedTime
+        val delay = if (sinceAllowed < 300L) 300L else 80L
 
         pendingLock?.let { lockHandler.removeCallbacks(it) }
         val runnable = Runnable {
@@ -68,6 +78,7 @@ class StudyAccessibilityService : AccessibilityService() {
                 lastAllowedTime = System.currentTimeMillis()
                 return@Runnable
             }
+            if (hasAllowedWindowInStack()) return@Runnable
             performGlobalAction(GLOBAL_ACTION_HOME)
             val now = System.currentTimeMillis()
             if (now - lastToastTime > 1000) {
@@ -79,61 +90,55 @@ class StudyAccessibilityService : AccessibilityService() {
         lockHandler.postDelayed(runnable, delay)
     }
 
+    // 遍历所有可见窗口，只要有一个属于白名单 App 就返回 true
+    private fun hasAllowedWindowInStack(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
+        return try {
+            windows.any { w ->
+                val wPkg = try { w.root?.packageName?.toString() } catch (_: Exception) { null } ?: ""
+                wPkg.isNotEmpty() && isAllowed(wPkg)
+            }
+        } catch (_: Exception) { false }
+    }
+
     private fun isAllowed(pkg: String) =
         pkg == "com.kaoyan.studytimer" || isSystem(pkg) || isWhitelisted(pkg)
 
     private fun isSystem(pkg: String): Boolean {
         if (pkg.isEmpty() || pkg == "android") return true
-        // AOSP 系统
         if (pkg.startsWith("com.android.")) return true
-        // Google 系统组件
         if (pkg.startsWith("com.google.android.")) return true
-        // 小米 / Redmi / MIUI
         if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
-        if (pkg.startsWith("com.lbe.security.")) return true   // MIUI 应用锁解锁界面
-        // OPPO / ColorOS / Realme
+        if (pkg.startsWith("com.lbe.security.")) return true
         if (pkg.startsWith("com.oppo.") || pkg.startsWith("com.coloros.")) return true
         if (pkg.startsWith("com.realme.")) return true
-        // 华为 / Honor
         if (pkg.startsWith("com.huawei.") || pkg.startsWith("com.hihon.")) return true
         if (pkg.startsWith("com.honor.")) return true
-        // 三星
         if (pkg.startsWith("com.samsung.") || pkg.startsWith("com.sec.")) return true
-        // vivo / iQOO
         if (pkg.startsWith("com.vivo.") || pkg.startsWith("com.bbk.")) return true
-        // OnePlus
         if (pkg.startsWith("com.oneplus.")) return true
-        // 魅族
         if (pkg.startsWith("com.meizu.")) return true
-        // 联想 / ZUK
         if (pkg.startsWith("com.zui.") || pkg.startsWith("com.lenovo.")) return true
-        // 华硕
         if (pkg.startsWith("com.asus.")) return true
-        // LG / 索尼 / Nothing
         if (pkg.startsWith("com.lge.") || pkg.startsWith("com.sony.") || pkg.startsWith("com.nothing.")) return true
 
         val knownSystem = setOf(
-            // 常见桌面启动器
             "com.oppo.launcher", "com.huawei.android.launcher",
             "com.sec.android.app.launcher", "com.miui.home", "com.coloros.launcher",
             "com.google.android.apps.nexuslauncher",
-            // 输入法
             "com.google.android.inputmethod.latin",
             "com.iflytek.inputmethod", "com.sohu.inputmethod.sogou",
             "com.baidu.input", "com.baidu.input_mi",
             "com.touchtype.swiftkey", "com.swiftkey.swiftkeyconfigurator",
-            // WebView
             "com.google.android.webview", "com.android.webview",
-            // 权限 / 安装 / 系统 UI
             "com.android.permissioncontroller", "com.google.android.permissioncontroller",
             "com.google.android.packageinstaller", "com.android.packageinstaller",
             "com.android.systemui",
-            // 各厂商应用锁 / 安全中心
-            "com.iqoo.secure",                  // vivo 应用锁
-            "com.qiku.security",                // 360 / 奇酷
-            "com.yulong.android.security",      // 酷派
-            "com.coloros.safecenter",           // OPPO 安全中心
-            "com.miui.securitycenter",          // 小米安全中心
+            "com.iqoo.secure",
+            "com.qiku.security",
+            "com.yulong.android.security",
+            "com.coloros.safecenter",
+            "com.miui.securitycenter",
         )
         return knownSystem.contains(pkg)
     }

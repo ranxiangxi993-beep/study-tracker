@@ -2,20 +2,73 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Text, View, StyleSheet, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import TimerScreen from './src/screens/TimerScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import StatsScreen from './src/screens/StatsScreen';
-import { COLORS } from './src/constants';
+import CountdownScreen from './src/screens/CountdownScreen';
+import { COLORS, APP_VERSION_CODE } from './src/constants';
 import { startScheduleMonitor } from './src/notify';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 export const BgContext = createContext({ bgUri: null, setBgUri: () => {}, resetBg: () => {} });
 export const useBg = () => useContext(BgContext);
+
+const GITHUB_REPO = 'ranxiangxi993-beep/study-tracker';
+const RELEASE_TAG = 'latest-build';
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}`,
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!res.ok) return;
+    const release = await res.json();
+    const verAsset = release.assets?.find(a => a.name === 'version.json');
+    if (!verAsset) return;
+    const verRes = await fetch(verAsset.browser_download_url);
+    const { versionCode } = await verRes.json();
+    if (!versionCode || versionCode <= APP_VERSION_CODE) return;
+    const apkAsset = release.assets?.find(a => a.name === 'app-release.apk');
+    if (!apkAsset) return;
+    Alert.alert(
+      '发现新版本',
+      '研途有新版本可用，是否立即下载安装？',
+      [
+        { text: '稍后', style: 'cancel' },
+        { text: '立即更新', onPress: () => downloadAndInstall(apkAsset.browser_download_url) },
+      ]
+    );
+  } catch (_) {}
+}
+
+async function downloadAndInstall(url) {
+  try {
+    const localUri = FileSystem.cacheDirectory + 'study_update.apk';
+    Alert.alert('下载中...', '正在下载新版本，请稍候');
+    const { uri } = await FileSystem.downloadAsync(url, localUri);
+    const contentUri = await FileSystem.getContentUriAsync(uri);
+    let IntentLauncher;
+    try { IntentLauncher = require('expo-intent-launcher'); } catch (_) {}
+    if (IntentLauncher?.startActivityAsync) {
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        type: 'application/vnd.android.package-archive',
+        flags: 1,
+      });
+    }
+  } catch (_) {
+    Alert.alert('更新失败', '请检查网络后重试');
+  }
+}
 
 function TabIcon({ emoji, label, focused }) {
   return (
@@ -28,10 +81,36 @@ function TabIcon({ emoji, label, focused }) {
   );
 }
 
+function TabsNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: COLORS.card,
+          borderTopColor: 'rgba(255,255,255,0.05)',
+          borderTopWidth: 1,
+          paddingTop: 4,
+          height: 60,
+        },
+        tabBarShowLabel: false,
+        tabBarActiveTintColor: '#fff',
+        tabBarInactiveTintColor: COLORS.text2,
+      }}
+    >
+      <Tab.Screen name="Timer" component={TimerScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="⏱️" label="计时" focused={focused} /> }} />
+      <Tab.Screen name="Schedule" component={ScheduleScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📅" label="日程" focused={focused} /> }} />
+      <Tab.Screen name="Stats" component={StatsScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="统计" focused={focused} /> }} />
+    </Tab.Navigator>
+  );
+}
+
 function AppContent() {
   const { bgUri } = useBg();
 
-  // Build a transparent theme when background is set
   const navTheme = {
     dark: true,
     colors: {
@@ -46,32 +125,13 @@ function AppContent() {
 
   const inner = (
     <NavigationContainer theme={navTheme}>
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: bgUri ? 'rgba(26,26,46,0.92)' : COLORS.card,
-            borderTopColor: 'rgba(255,255,255,0.05)',
-            borderTopWidth: 1,
-            paddingTop: 4,
-            height: 60,
-          },
-          tabBarShowLabel: false,
-          tabBarActiveTintColor: '#fff',
-          tabBarInactiveTintColor: COLORS.text2,
-        }}
-      >
-        <Tab.Screen name="Timer" component={TimerScreen}
-          options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="⏱️" label="计时" focused={focused} /> }} />
-        <Tab.Screen name="Schedule" component={ScheduleScreen}
-          options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📅" label="日程" focused={focused} /> }} />
-        <Tab.Screen name="Stats" component={StatsScreen}
-          options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="统计" focused={focused} /> }} />
-      </Tab.Navigator>
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+        <Stack.Screen name="Tabs" component={TabsNavigator} />
+        <Stack.Screen name="Countdown" component={CountdownScreen} />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 
-  // expo-image handles content:// and file:// URIs correctly on Android
   if (bgUri) {
     return (
       <View style={styles.bg}>
@@ -90,7 +150,8 @@ export default function App() {
 
   useEffect(() => {
     AsyncStorage.getItem('bg_image').then(data => { if (data) setBgUri(data); });
-    startScheduleMonitor(); // Start monitoring user's schedule for reminders
+    startScheduleMonitor();
+    setTimeout(checkForUpdate, 3000);
   }, []);
 
   const updateBg = (uri) => {

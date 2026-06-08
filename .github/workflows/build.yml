@@ -6,6 +6,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,18 +20,30 @@ jobs:
       - run: npm install
       - run: npx expo prebuild --platform android
       # expo prebuild may omit a version for kotlin-gradle-plugin; pin to 2.1.20
-      # (expo-module-gradle-plugin from expo-modules-core 3.x also enforces 2.1.20)
       - run: sed -i "s|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20')|" android/build.gradle
       - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml android/app/src/main/res/values
       - run: cp native/lock/*.kt android/app/src/main/java/com/kaoyan/studytimer/lock/
       - run: cp native/res/xml/accessibility_service_config.xml android/app/src/main/res/xml/
+      - run: cp native/res/xml/file_paths.xml android/app/src/main/res/xml/
       - run: cp native/res/device_admin_policies.xml android/app/src/main/res/xml/
       - run: cp native/res/values/strings.xml android/app/src/main/res/values/
       - run: cp native/AndroidManifest.xml android/app/src/main/
       - run: sed -i 's|import expo.modules.ReactNativeHostWrapper|import expo.modules.ReactNativeHostWrapper\nimport com.kaoyan.studytimer.lock.StudyLockPackage|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
       - run: sed -i 's|// add(MyReactNativePackage())|add(StudyLockPackage())|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
       - run: cd android && ./gradlew assembleRelease
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Package release assets
+        run: |
+          VERSION_CODE=$(node -p "require('./app.json').expo.android.versionCode || 1")
+          echo "{\"versionCode\":$VERSION_CODE}" > version.json
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest-build --yes 2>/dev/null || true
+          gh release create latest-build \
+            --title "Latest Build ($(date '+%Y-%m-%d %H:%M'))" \
+            --notes "Commit: ${{ github.sha }}" \
+            android/app/build/outputs/apk/release/app-release.apk \
+            version.json

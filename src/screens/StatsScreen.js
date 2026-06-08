@@ -2,13 +2,11 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform,
 } from 'react-native';
-import Svg, { Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import PieChart from '../components/PieChart';
 
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
-import { nextQuote, getDailyQuote } from '../quotes';
 import {
   getPeriodStats, getHistory, getHistoryCount,
   getHistoryInRange, getHistoryCountInRange,
@@ -55,167 +53,6 @@ const PERIODS = [
   { key: 'month', label: '月度' },
   { key: 'year',  label: '年度' },
 ];
-
-const KAOYAN_TARGET = new Date(2026, 11, 20, 9, 0, 0); // 2026-12-20 09:00
-const KAOYAN_START  = new Date(2026, 4, 31);            // 2026-05-31 起点
-
-const PHASES = [
-  { minDays: 150, label: '基础积累期', color: '#4A90D9' },
-  { minDays: 90,  label: '强化提升期', color: '#9B59B6' },
-  { minDays: 30,  label: '冲刺备考期', color: '#f39c12' },
-  { minDays: 0,   label: '最终决战期', color: '#e74c3c' },
-];
-
-function Countdown() {
-  const [now, setNow] = useState(new Date());
-  const [quote] = useState(() => getDailyQuote());
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const remainMs  = Math.max(0, KAOYAN_TARGET - now);
-  const totalMs   = KAOYAN_TARGET - KAOYAN_START;
-  const pct       = Math.min(100, Math.max(0, Math.round((1 - remainMs / totalMs) * 100)));
-  const days      = Math.floor(remainMs / 86400000);
-  const hours     = Math.floor((remainMs % 86400000) / 3600000);
-  const mins      = Math.floor((remainMs % 3600000) / 60000);
-  const secs      = Math.floor((remainMs % 60000) / 1000);
-  const phase     = PHASES.find(p => days >= p.minDays) || PHASES[PHASES.length - 1];
-
-  // SVG arc
-  const SZ = 220;
-  const CX = SZ / 2, CY = SZ / 2, R = 88;
-  const FULL = 2 * Math.PI * R;
-  const dash = (pct / 100) * FULL;
-
-  const pad = n => String(n).padStart(2, '0');
-
-  return (
-    <View style={cdStyles.card}>
-      {/* 顶部标题行 */}
-      <View style={cdStyles.header}>
-        <Text style={cdStyles.headerLabel}>🎯 2026 考研倒计时</Text>
-        <View style={[cdStyles.phasePill, { borderColor: phase.color + '66', backgroundColor: phase.color + '18' }]}>
-          <Text style={[cdStyles.phaseText, { color: phase.color }]}>{phase.label}</Text>
-        </View>
-      </View>
-
-      {/* 弧形进度 + 天数 */}
-      <View style={cdStyles.arcWrap}>
-        <Svg width={SZ} height={SZ}>
-          <Defs>
-            <LinearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={phase.color} stopOpacity="1" />
-              <Stop offset="100%" stopColor={phase.color} stopOpacity="0.5" />
-            </LinearGradient>
-          </Defs>
-          {/* 背景轨道 */}
-          <SvgCircle cx={CX} cy={CY} r={R}
-            stroke="rgba(255,255,255,0.07)" strokeWidth={10} fill="none" />
-          {/* 进度弧 */}
-          <SvgCircle cx={CX} cy={CY} r={R}
-            stroke={`url(#arcGrad)`}
-            strokeWidth={10} fill="none"
-            strokeDasharray={`${dash} ${FULL}`}
-            strokeLinecap="round"
-            rotation="-90" origin={`${CX}, ${CY}`} />
-        </Svg>
-
-        <View style={cdStyles.daysOverlay}>
-          <Text style={cdStyles.daysNum}>{days}</Text>
-          <Text style={cdStyles.daysUnit}>天</Text>
-          <Text style={cdStyles.pctHint}>{pct}% 已走过</Text>
-        </View>
-      </View>
-
-      {/* 时分秒倒计时 */}
-      <View style={cdStyles.timeRow}>
-        {[{v: pad(hours), u:'时'}, {v: pad(mins), u:'分'}, {v: pad(secs), u:'秒'}].map(({v, u}, i) => (
-          <React.Fragment key={u}>
-            {i > 0 && <Text style={cdStyles.timeSep}>:</Text>}
-            <View style={cdStyles.timeCell}>
-              <Text style={cdStyles.timeVal}>{v}</Text>
-              <Text style={cdStyles.timeUnit}>{u}</Text>
-            </View>
-          </React.Fragment>
-        ))}
-      </View>
-
-      {/* 细进度条 */}
-      <View style={cdStyles.barWrap}>
-        <View style={cdStyles.barTrack}>
-          <View style={[cdStyles.barFill, { width: `${pct}%`, backgroundColor: phase.color }]} />
-        </View>
-        <Text style={cdStyles.barLabel}>距考试还有 {days} 天</Text>
-      </View>
-
-      {/* 语录 */}
-      <View style={cdStyles.quoteBox}>
-        <Text style={cdStyles.quoteText}>「{quote}」</Text>
-      </View>
-    </View>
-  );
-}
-
-const cdStyles = StyleSheet.create({
-  card: {
-    marginHorizontal: 16, marginTop: 16,
-    backgroundColor: COLORS.card,
-    borderRadius: 22,
-    borderWidth: 1, borderColor: COLORS.border,
-    overflow: 'hidden',
-    paddingBottom: 4,
-  },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 6,
-  },
-  headerLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
-  phasePill: {
-    paddingHorizontal: 10, paddingVertical: 3,
-    borderRadius: 20, borderWidth: 1,
-  },
-  phaseText: { fontSize: 10, fontWeight: '700' },
-  arcWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  daysOverlay: {
-    position: 'absolute', alignItems: 'center', justifyContent: 'center',
-  },
-  daysNum: {
-    fontSize: 76, fontWeight: '900', color: COLORS.text,
-    letterSpacing: -3, lineHeight: 82,
-  },
-  daysUnit: { fontSize: 16, color: COLORS.text2, marginTop: -2 },
-  pctHint: { fontSize: 10, color: COLORS.text2, marginTop: 4, opacity: 0.7 },
-  timeRow: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end',
-    marginTop: -8, marginBottom: 16, gap: 6,
-  },
-  timeCell: {
-    alignItems: 'center', backgroundColor: COLORS.card2,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, minWidth: 54,
-  },
-  timeVal: { fontSize: 22, fontWeight: '700', color: COLORS.text },
-  timeUnit: { fontSize: 9, color: COLORS.text2, marginTop: 1 },
-  timeSep: { fontSize: 16, color: COLORS.text2, marginBottom: 10 },
-  barWrap: { paddingHorizontal: 20, marginBottom: 14 },
-  barTrack: {
-    height: 3, backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 2, overflow: 'hidden',
-  },
-  barFill: { height: '100%', borderRadius: 2 },
-  barLabel: { fontSize: 10, color: COLORS.text2, marginTop: 5, textAlign: 'center', opacity: 0.7 },
-  quoteBox: {
-    marginHorizontal: 16, marginBottom: 18,
-    backgroundColor: COLORS.card2, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 16,
-  },
-  quoteText: {
-    fontSize: 12, color: COLORS.text2, textAlign: 'center',
-    lineHeight: 19, fontStyle: 'italic',
-  },
-});
 
 function getWeekRange() {
   const now = new Date();
@@ -346,9 +183,6 @@ export default function StatsScreen() {
         <View style={styles.chartSection}>
           <PieChart data={stats.subjects} totalSec={stats.total_sec} />
         </View>
-
-        {/* Countdown - year view only */}
-        {period === 'year' && <Countdown />}
 
         {/* Month Calendar Grid */}
         {period === 'month' && (
