@@ -13,7 +13,7 @@ import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
-import { isAccessibilityEnabled, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
 export default function TimerScreen({ navigation }) {
@@ -235,11 +235,22 @@ export default function TimerScreen({ navigation }) {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
             if (!hasAcc) {
-              Alert.alert('开启专注锁（三步）', '小米/OPPO 用户需完成以下三步，否则锁机会失效：\n\n1️⃣ 无障碍 → 已下载的服务 → 研途专注\n2️⃣ 自启动 → 找到研途 → 允许\n3️⃣ 电池优化 → 选择研途 → 不优化', [
-                { text: '1️⃣ 无障碍', onPress: openAccessibilitySettings },
-                { text: '2️⃣ 自启动', onPress: openWhiteListSettings },
-                { text: '3️⃣ 电池', onPress: openBatterySettings },
-              ]);
+              // 区分"系统开关假开启（更新后服务被杀）"和"确实没开"
+              const sysOn = await isAccessibilitySettingOn();
+              if (sysOn) {
+                Alert.alert('无障碍需重新激活',
+                  '系统显示「研途专注」已开启，但更新 App 后安卓杀掉了服务（开关是"假开")。\n\n请进入无障碍，把「研途专注」开关【关闭再重新打开】，然后回来再点锁机。',
+                  [
+                    { text: '去无障碍重开', onPress: openAccessibilitySettings },
+                    { text: '取消', style: 'cancel' },
+                  ]);
+              } else {
+                Alert.alert('开启专注锁（三步）', '小米/OPPO 用户需完成以下三步，否则锁机会失效：\n\n1️⃣ 无障碍 → 已下载的服务 → 研途专注\n2️⃣ 自启动 → 找到研途 → 允许\n3️⃣ 电池优化 → 选择研途 → 不优化', [
+                  { text: '1️⃣ 无障碍', onPress: openAccessibilitySettings },
+                  { text: '2️⃣ 自启动', onPress: openWhiteListSettings },
+                  { text: '3️⃣ 电池', onPress: openBatterySettings },
+                ]);
+              }
               return;
             }
             // Accessibility is on, but remind about remaining steps

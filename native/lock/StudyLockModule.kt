@@ -119,17 +119,21 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     // Accessibility-based lock (primary method)
     @ReactMethod fun lock(p: Promise) {
-        val saved = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
-            .getString("whitelist", "") ?: ""
+        val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+        val saved = prefs.getString("whitelist", "") ?: ""
         StudyAccessibilityService.whitelist.clear()
         if (saved.isNotEmpty()) StudyAccessibilityService.whitelist.addAll(saved.split(","))
         StudyAccessibilityService.lockActive = true
+        // 持久化锁定状态：进程被杀重启后无障碍服务可据此自动恢复
+        prefs.edit().putBoolean("lock_active", true).apply()
         LockForegroundService.start(reactApplicationContext)
         p.resolve("accessibility")
     }
 
     @ReactMethod fun unlock(p: Promise) {
         StudyAccessibilityService.lockActive = false
+        reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            .edit().putBoolean("lock_active", false).apply()
         LockForegroundService.stop(reactApplicationContext)
         try { reactApplicationContext.currentActivity?.stopLockTask() } catch (_: Exception) {}
         p.resolve(true)
@@ -137,6 +141,24 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun isAccessibilityEnabled(p: Promise) {
         p.resolve(StudyAccessibilityService.instance != null)
+    }
+
+    // 系统设置里"研途专注"开关是否打开（与服务是否真正在运行无关）。
+    // 更新 App 后安卓会杀掉服务但开关仍显示开启，用它来识别这种"假开启"。
+    @ReactMethod fun isAccessibilitySettingOn(p: Promise) {
+        try {
+            val ctx = reactApplicationContext
+            val enabled = android.provider.Settings.Secure.getString(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+            val svc = "${ctx.packageName}/${StudyAccessibilityService::class.java.name}"
+            val svcShort = "${ctx.packageName}/.lock.StudyAccessibilityService"
+            val on = enabled.split(":").any {
+                it.equals(svc, ignoreCase = true) || it.equals(svcShort, ignoreCase = true)
+            }
+            p.resolve(on)
+        } catch (e: Exception) { p.resolve(false) }
     }
 
     @ReactMethod fun getApps(p: Promise) {

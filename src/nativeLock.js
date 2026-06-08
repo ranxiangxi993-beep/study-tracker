@@ -18,6 +18,12 @@ export async function isAccessibilityEnabled() {
   try { return await L.isAccessibilityEnabled(); } catch (e) { return false; }
 }
 
+// 系统开关是否打开（更新后可能显示开着但服务已被安卓杀掉）
+export async function isAccessibilitySettingOn() {
+  if (!L?.isAccessibilitySettingOn) return false;
+  try { return await L.isAccessibilitySettingOn(); } catch (e) { return false; }
+}
+
 export async function openAccessibilitySettings() {
   if (!L?.openAccessibilitySettings) return;
   try { await L.openAccessibilitySettings(); } catch (e) {}

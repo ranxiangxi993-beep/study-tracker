@@ -26,11 +26,17 @@ class StudyAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        lockActive = false
-        val saved = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
-            .getString("whitelist", "") ?: ""
+        val prefs = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+        // 国产 ROM 杀掉进程后系统会重启无障碍服务：从持久化标志恢复锁定状态，
+        // 而不是清零，否则"锁一下就没了"。
+        lockActive = prefs.getBoolean("lock_active", false)
+        val saved = prefs.getString("whitelist", "") ?: ""
         whitelist.clear()
         if (saved.isNotEmpty()) whitelist.addAll(saved.split(","))
+        // 恢复后若仍处于锁定，重新拉起前台保活服务
+        if (lockActive) {
+            try { LockForegroundService.start(this) } catch (_: Exception) {}
+        }
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                          AccessibilityEvent.TYPE_WINDOWS_CHANGED
