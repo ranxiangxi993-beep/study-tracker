@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform,
+  View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform, StatusBar,
 } from 'react-native';
 import Svg, { Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -172,11 +172,15 @@ export default function CountdownScreen({ navigation }) {
 
 const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: COLORS.bg },
-  safe: { flex: 1, alignItems: 'center', paddingHorizontal: 24 },
+  safe: {
+    flex: 1, alignItems: 'center', paddingHorizontal: 24,
+    // Android 的 SafeAreaView 不会自动避开状态栏，手动加状态栏高度，避免顶栏与状态栏重合
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0,
+  },
   topBar: {
     width: '100%', flexDirection: 'row',
     justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 12 : 4, paddingBottom: 4,
+    paddingTop: 8, paddingBottom: 4,
   },
   phasePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   phaseText: { fontSize: 11, fontWeight: '700' },
