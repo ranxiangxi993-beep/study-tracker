@@ -50,24 +50,39 @@ async function checkForUpdate() {
   } catch (_) {}
 }
 
+// 国内直连 GitHub 下载 CDN（objects.githubusercontent.com）常超时，
+// 优先走加速镜像，逐个回退，最后才直连。
+const DL_MIRRORS = [
+  u => 'https://ghfast.top/' + u,
+  u => 'https://gh-proxy.com/' + u,
+  u => 'https://ghproxy.net/' + u,
+  u => u, // 直连兜底
+];
+
 async function downloadAndInstall(url) {
-  try {
-    const localUri = FileSystem.cacheDirectory + 'study_update.apk';
-    Alert.alert('下载中...', '正在下载新版本，请稍候');
-    const { uri } = await FileSystem.downloadAsync(url, localUri);
-    const contentUri = await FileSystem.getContentUriAsync(uri);
-    let IntentLauncher;
-    try { IntentLauncher = require('expo-intent-launcher'); } catch (_) {}
-    if (IntentLauncher?.startActivityAsync) {
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        type: 'application/vnd.android.package-archive',
-        flags: 1,
-      });
+  Alert.alert('下载中...', '正在下载新版本（约 75MB），请稍候');
+  const localUri = FileSystem.cacheDirectory + 'study_update.apk';
+  let lastErr = '';
+  for (const wrap of DL_MIRRORS) {
+    try {
+      const { uri, status } = await FileSystem.downloadAsync(wrap(url), localUri);
+      if (status >= 400) { lastErr = 'HTTP ' + status; continue; }
+      const contentUri = await FileSystem.getContentUriAsync(uri);
+      let IntentLauncher;
+      try { IntentLauncher = require('expo-intent-launcher'); } catch (_) {}
+      if (IntentLauncher?.startActivityAsync) {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          type: 'application/vnd.android.package-archive',
+          flags: 1,
+        });
+      }
+      return; // 成功
+    } catch (e) {
+      lastErr = (e && e.message) ? e.message : String(e);
     }
-  } catch (_) {
-    Alert.alert('更新失败', '请检查网络后重试');
   }
+  Alert.alert('更新失败', '下载失败（' + lastErr + '）。\n可在浏览器打开项目 Release 页手动下载安装。');
 }
 
 function TabIcon({ emoji, label, focused }) {
