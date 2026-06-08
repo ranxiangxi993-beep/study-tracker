@@ -32,7 +32,17 @@ jobs:
       - run: cp native/AndroidManifest.xml android/app/src/main/
       - run: sed -i 's|import expo.modules.ReactNativeHostWrapper|import expo.modules.ReactNativeHostWrapper\nimport com.kaoyan.studytimer.lock.StudyLockPackage|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
       - run: sed -i 's|// add(MyReactNativePackage())|add(StudyLockPackage())|' android/app/src/main/java/com/kaoyan/studytimer/MainApplication.kt
-      - run: cd android && ./gradlew assembleRelease
+      # Gradle 分发包偶尔遇 GitHub CDN 504，自动重试几次
+      - name: Build release APK (retry on transient failures)
+        run: |
+          cd android
+          for i in 1 2 3 4; do
+            ./gradlew assembleRelease && exit 0
+            echo "::warning::第 $i 次构建失败（可能是 Gradle 下载 504），15s 后重试..."
+            sleep 15
+          done
+          echo "::error::构建重试 4 次仍失败"
+          exit 1
 
       - name: Find and verify APK
         run: |

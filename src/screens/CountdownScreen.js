@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform,
 } from 'react-native';
 import Svg, { Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants';
 import { getDailyQuote } from '../quotes';
@@ -24,10 +24,24 @@ export default function CountdownScreen({ navigation }) {
   const [pickerValue, setPickerValue] = useState(new Date());
   const [quote] = useState(() => getDailyQuote());
 
-  // 打开选择器时固定一个初始值，避免每秒刷新把日期冲回今天
+  // Android 用命令式 API 打开原生弹窗：它独立于 React 渲染，
+  // 不会被每秒刷新（now 更新）重建/冲回今天。iOS 仍用内联组件。
   const openPicker = () => {
-    setPickerValue(studyStart || new Date());
-    setShowPicker(true);
+    const current = studyStart || new Date();
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: current,
+        mode: 'date',
+        minimumDate: new Date(2024, 0, 1),
+        maximumDate: KAOYAN_TARGET,
+        onChange: (e, date) => {
+          if (e.type === 'set' && date) saveStart(date);
+        },
+      });
+    } else {
+      setPickerValue(current);
+      setShowPicker(true);
+    }
   };
 
   useEffect(() => {
@@ -135,7 +149,7 @@ export default function CountdownScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {showPicker && (
+        {Platform.OS === 'ios' && showPicker && (
           <DateTimePicker
             value={pickerValue}
             mode="date"
