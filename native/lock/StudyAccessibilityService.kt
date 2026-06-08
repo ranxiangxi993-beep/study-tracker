@@ -3,6 +3,7 @@ package com.kaoyan.studytimer.lock
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -85,7 +86,7 @@ class StudyAccessibilityService : AccessibilityService() {
                 return@Runnable
             }
             if (hasWhitelistedWindowInStack()) return@Runnable
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            kickToHome()
             val now = System.currentTimeMillis()
             if (now - lastToastTime > 1000) {
                 Toast.makeText(this, "已锁定", Toast.LENGTH_SHORT).show()
@@ -163,6 +164,19 @@ class StudyAccessibilityService : AccessibilityService() {
     private fun isWhitelisted(pkg: String): Boolean {
         if (pkg == "com.kaoyan.studytimer") return true
         return whitelist.contains(pkg)
+    }
+
+    // 回桌面：先直接拉起 Launcher（能清掉最近任务/悬浮残留窗口，
+    // 比单纯 GLOBAL_ACTION_HOME 在 ColorOS 上更干净），再补一次 HOME 兜底。
+    private fun kickToHome() {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            startActivity(intent)
+        } catch (_: Exception) {}
+        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Exception) {}
     }
 
     override fun onInterrupt() {}
