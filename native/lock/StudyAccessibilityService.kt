@@ -118,7 +118,8 @@ class StudyAccessibilityService : AccessibilityService() {
         if (pkg.startsWith("com.google.android.")) return true
         if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
         if (pkg.startsWith("com.lbe.security.")) return true
-        if (pkg.startsWith("com.oppo.") || pkg.startsWith("com.coloros.")) return true
+        if (pkg.startsWith("com.oppo.") || pkg.startsWith("com.coloros.") ||
+            pkg.startsWith("com.oplus.")) return true   // 新版 ColorOS/OPPO 用 oplus 前缀
         if (pkg.startsWith("com.realme.")) return true
         if (pkg.startsWith("com.huawei.") || pkg.startsWith("com.hihon.")) return true
         if (pkg.startsWith("com.honor.")) return true
@@ -129,6 +130,14 @@ class StudyAccessibilityService : AccessibilityService() {
         if (pkg.startsWith("com.zui.") || pkg.startsWith("com.lenovo.")) return true
         if (pkg.startsWith("com.asus.")) return true
         if (pkg.startsWith("com.lge.") || pkg.startsWith("com.sony.") || pkg.startsWith("com.nothing.")) return true
+
+        // 各厂商"应用加密/指纹·人脸·密码验证/锁屏"界面统一放行：打开白名单 App 时
+        // 弹出的这类验证界面不应被踢回桌面（如 ColorOS 应用加密的指纹验证界面）。
+        // 这些关键字几乎不可能出现在需要被锁的普通应用包名里，故安全。
+        if (pkg.contains("safecenter") || pkg.contains("securitycenter") ||
+            pkg.contains("keyguard") || pkg.contains("fingerprint") ||
+            pkg.contains("biometric") || pkg.contains("applock") ||
+            pkg.contains("facecheck") || pkg.contains("faceunlock")) return true
 
         val knownSystem = setOf(
             "com.oppo.launcher", "com.huawei.android.launcher",
