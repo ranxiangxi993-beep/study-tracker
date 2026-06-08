@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
 import TimerCircle from '../components/TimerCircle';
 import SubjectSelector from '../components/SubjectSelector';
-import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';
+import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak } from '../notify';
@@ -325,6 +325,7 @@ export default function TimerScreen({ navigation }) {
               {bgUri && <TouchableOpacity style={[styles.bgb, { backgroundColor: COLORS.lock }]} onPress={resetBg}><Text style={styles.bgbT}>↺ 恢复默认</Text></TouchableOpacity>}
             </View>
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 14 }} onPress={() => setShowSettings(false)}><Text style={{ color: COLORS.text2 }}>关闭</Text></TouchableOpacity>
+            <Text style={{ color: COLORS.text2, textAlign: 'center', fontSize: 11, opacity: 0.6, paddingBottom: 8 }}>研途 · 版本 v{APP_VERSION_CODE}</Text>
           </Pressable>
         </Pressable>
       </Modal>
