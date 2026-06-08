@@ -64,9 +64,9 @@ class StudyAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 检查整个窗口栈——如果白名单 App 的窗口仍在栈中（比如被密码弹窗盖住），
-        // 则不锁定。这是系统应用锁密码弹窗触发误锁的根本修复。
-        if (hasAllowedWindowInStack()) {
+        // 仅当"用户白名单 App"的窗口仍在栈中（比如被自身密码弹窗盖住）才不锁定。
+        // 系统应用/桌面不在此列，避免切换残留窗口造成漏锁。
+        if (hasWhitelistedWindowInStack()) {
             pendingLock?.let { lockHandler.removeCallbacks(it) }
             pendingLock = null
             return
@@ -84,7 +84,7 @@ class StudyAccessibilityService : AccessibilityService() {
                 lastAllowedTime = System.currentTimeMillis()
                 return@Runnable
             }
-            if (hasAllowedWindowInStack()) return@Runnable
+            if (hasWhitelistedWindowInStack()) return@Runnable
             performGlobalAction(GLOBAL_ACTION_HOME)
             val now = System.currentTimeMillis()
             if (now - lastToastTime > 1000) {
@@ -96,13 +96,15 @@ class StudyAccessibilityService : AccessibilityService() {
         lockHandler.postDelayed(runnable, delay)
     }
 
-    // 遍历所有可见窗口，只要有一个属于白名单 App 就返回 true
-    private fun hasAllowedWindowInStack(): Boolean {
+    // 遍历所有可见窗口，只要有一个属于"用户白名单 App"（或本应用）就返回 true。
+    // 注意：这里只认白名单，不能把系统应用/桌面算进来——否则从桌面切到非白名单
+    // App 时，过渡阶段残留的桌面窗口会被误判为"放行窗口"，导致漏锁（如微信打不开锁）。
+    private fun hasWhitelistedWindowInStack(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
         return try {
             windows.any { w ->
                 val wPkg = try { w.root?.packageName?.toString() } catch (_: Exception) { null } ?: ""
-                wPkg.isNotEmpty() && isAllowed(wPkg)
+                wPkg.isNotEmpty() && isWhitelisted(wPkg)
             }
         } catch (_: Exception) { false }
     }
