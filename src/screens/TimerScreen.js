@@ -6,7 +6,7 @@ import {
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
 import TimerCircle from '../components/TimerCircle';
 import SubjectSelector from '../components/SubjectSelector';
 import { SUBJECTS, TIMER_MODES, COLORS } from '../constants';

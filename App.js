@@ -7,7 +7,9 @@ import { Text, View, StyleSheet, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+// SDK 54 起 expo-file-system 默认导出改为新版 File/Directory API，
+// downloadAsync/cacheDirectory/getContentUriAsync 等旧方法移到 legacy 子模块
+import * as FileSystem from 'expo-file-system/legacy';
 import TimerScreen from './src/screens/TimerScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import StatsScreen from './src/screens/StatsScreen';
