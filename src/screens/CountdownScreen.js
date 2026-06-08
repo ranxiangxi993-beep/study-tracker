@@ -21,7 +21,14 @@ export default function CountdownScreen({ navigation }) {
   const [now, setNow] = useState(new Date());
   const [studyStart, setStudyStart] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerValue, setPickerValue] = useState(new Date());
   const [quote] = useState(() => getDailyQuote());
+
+  // 打开选择器时固定一个初始值，避免每秒刷新把日期冲回今天
+  const openPicker = () => {
+    setPickerValue(studyStart || new Date());
+    setShowPicker(true);
+  };
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -94,7 +101,7 @@ export default function CountdownScreen({ navigation }) {
             <Text style={s.daysUnit}>天</Text>
             {studyStart
               ? <Text style={s.pctHint}>已备考 {studiedDays} 天 · {pct}%</Text>
-              : <TouchableOpacity onPress={() => setShowPicker(true)}>
+              : <TouchableOpacity onPress={openPicker}>
                   <Text style={[s.pctHint, { color: phase.color }]}>点击设置开始日期</Text>
                 </TouchableOpacity>
             }
@@ -121,7 +128,7 @@ export default function CountdownScreen({ navigation }) {
 
         {/* 修改开始日期按钮 */}
         {studyStart && (
-          <TouchableOpacity style={s.editDateBtn} onPress={() => setShowPicker(true)}>
+          <TouchableOpacity style={s.editDateBtn} onPress={openPicker}>
             <Text style={s.editDateText}>
               📅 备考开始：{studyStart.toLocaleDateString('zh-CN')}  修改
             </Text>
@@ -130,13 +137,17 @@ export default function CountdownScreen({ navigation }) {
 
         {showPicker && (
           <DateTimePicker
-            value={studyStart || new Date()}
+            value={pickerValue}
             mode="date"
             display="default"
+            minimumDate={new Date(2024, 0, 1)}
             maximumDate={KAOYAN_TARGET}
             onChange={(e, date) => {
               setShowPicker(false);
-              if (date) saveStart(date);
+              if (e.type !== 'dismissed' && date) {
+                setPickerValue(date);
+                saveStart(date);
+              }
             }}
           />
         )}
