@@ -26,40 +26,45 @@ export const useBg = () => useContext(BgContext);
 const GITHUB_REPO = 'ranxiangxi993-beep/study-tracker';
 const RELEASE_TAG = 'latest-build';
 
+// 国内直连 GitHub 下载 CDN（objects.githubusercontent.com）与 api.github.com
+// 都不稳定/被墙，统一走加速镜像，逐个回退，最后才直连。
+const DL_MIRRORS = [
+  u => 'https://gh-proxy.com/' + u,
+  u => 'https://ghproxy.net/' + u,
+  u => 'https://ghfast.top/' + u,
+  u => u, // 直连兜底
+];
+
+// 通过镜像逐个尝试 fetch，任一成功即返回 Response
+async function fetchViaMirror(url) {
+  for (const wrap of DL_MIRRORS) {
+    try {
+      const res = await fetch(wrap(url));
+      if (res.ok) return res;
+    } catch (_) {}
+  }
+  return null;
+}
+
 async function checkForUpdate() {
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}`,
-      { headers: { Accept: 'application/vnd.github+json' } }
-    );
-    if (!res.ok) return;
-    const release = await res.json();
-    const verAsset = release.assets?.find(a => a.name === 'version.json');
-    if (!verAsset) return;
-    const verRes = await fetch(verAsset.browser_download_url);
+    // 直接按固定路径取 version.json（不再依赖 api.github.com 列资源），并走镜像
+    const verUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/version.json`;
+    const verRes = await fetchViaMirror(verUrl);
+    if (!verRes) return;
     const { versionCode } = await verRes.json();
     if (!versionCode || versionCode <= APP_VERSION_CODE) return;
-    const apkAsset = release.assets?.find(a => a.name === 'app-release.apk');
-    if (!apkAsset) return;
+    const apkUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/app-release.apk`;
     Alert.alert(
       '发现新版本',
-      '研途有新版本可用，是否立即下载安装？',
+      `研途有新版本 v${versionCode} 可用，是否立即下载安装？`,
       [
         { text: '稍后', style: 'cancel' },
-        { text: '立即更新', onPress: () => downloadAndInstall(apkAsset.browser_download_url) },
+        { text: '立即更新', onPress: () => downloadAndInstall(apkUrl) },
       ]
     );
   } catch (_) {}
 }
-
-// 国内直连 GitHub 下载 CDN（objects.githubusercontent.com）常超时，
-// 优先走加速镜像，逐个回退，最后才直连。
-const DL_MIRRORS = [
-  u => 'https://ghfast.top/' + u,
-  u => 'https://gh-proxy.com/' + u,
-  u => 'https://ghproxy.net/' + u,
-  u => u, // 直连兜底
-];
 
 async function downloadAndInstall(url) {
   Alert.alert('下载中...', '正在下载新版本（约 75MB），请稍候');
