@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+# 同一时间只跑最新一次构建，自动取消进行中的旧构建，避免抢发布冲突
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
