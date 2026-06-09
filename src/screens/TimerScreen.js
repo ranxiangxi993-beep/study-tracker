@@ -204,7 +204,12 @@ export default function TimerScreen({ navigation }) {
   const isLight = accentColor.length === 7 && parseInt(accentColor.slice(1,3),16) > 200 && parseInt(accentColor.slice(3,5),16) > 200 && parseInt(accentColor.slice(5,7),16) > 200;
   const btnTextColor = isLight ? '#333' : '#fff';
   const label = !isRunning ? (countUp ? '正计时 · 00:00' : '准备开始') : (isPaused ? '已暂停' : (mode === 'work' ? `${SUBJECTS[activeSubject]?.name}` : '休息中...'));
-  const displayTotal = countUp ? 86400 : cfg.minutes * 60;
+  // 进度比例(0~1)：与 mode 一致地计算，避免启动/切换时进度条闪烁。
+  // 倒计时=已过比例(1-剩余/总)，正计时=已计时/设定时长（封顶 1）。
+  const cfgSec = cfg.minutes * 60;
+  const ringProgress = countUp
+    ? Math.min(1, timeLeft / Math.max(1, cfgSec))
+    : (cfgSec > 0 ? 1 - timeLeft / cfgSec : 0);
 
   return (
     <View style={[styles.wrap, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
@@ -228,7 +233,7 @@ export default function TimerScreen({ navigation }) {
 
       <View style={styles.body}>
         <View style={styles.timerWrap}>
-          <TimerCircle timeLeft={timeLeft} totalTime={displayTotal} modeColor={timerColor} label={label} />
+          <TimerCircle timeLeft={timeLeft} progress={ringProgress} modeColor={timerColor} label={label} />
         </View>
 
         {/* Count direction */}

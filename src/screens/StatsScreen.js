@@ -232,45 +232,6 @@ export default function StatsScreen() {
           </View>
         ) : null}
 
-        {/* History list - only for week */}
-        {period === 'week' && (
-        <View style={styles.historySection}>
-          <Text style={styles.sectionTitle}>
-            📋 {periodLabel}记录 · 共 {sessionsTotal} 条
-          </Text>
-
-          {sessions.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>暂无学习记录</Text>
-            </View>
-          ) : (
-            sessions.map(s => {
-              const subj = SUBJECTS[s.subject];
-              const time = s.start_time ? new Date(s.start_time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
-              return (
-                <View key={s.id} style={styles.historyItem}>
-                  <View style={[styles.historyDot, { backgroundColor: subj?.color || COLORS.accent }]} />
-                  <View style={styles.historyInfo}>
-                    <Text style={styles.historySubj}>{subj?.icon || '📚'} {subj?.name || s.subject}</Text>
-                    <Text style={styles.historyMeta}>{s.date} {time}{s.note ? ' · ' + s.note : ''}</Text>
-                  </View>
-                  <Text style={styles.historyDur}>{formatDuration(s.duration)}</Text>
-                  <TouchableOpacity onPress={() => handleDelete(s.id)}>
-                    <Text style={styles.delBtn}>🗑</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-
-          {sessions.length < sessionsTotal && (
-            <TouchableOpacity style={styles.loadMore} onPress={loadMoreHistory}>
-              <Text style={styles.loadMoreText}>加载更多...</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
 
