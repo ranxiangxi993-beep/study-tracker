@@ -204,12 +204,12 @@ export default function TimerScreen({ navigation }) {
   const isLight = accentColor.length === 7 && parseInt(accentColor.slice(1,3),16) > 200 && parseInt(accentColor.slice(3,5),16) > 200 && parseInt(accentColor.slice(5,7),16) > 200;
   const btnTextColor = isLight ? '#333' : '#fff';
   const label = !isRunning ? (countUp ? '正计时 · 00:00' : '准备开始') : (isPaused ? '已暂停' : (mode === 'work' ? `${SUBJECTS[activeSubject]?.name}` : '休息中...'));
-  // 进度比例(0~1)：与 mode 一致地计算，避免启动/切换时进度条闪烁。
-  // 倒计时=已过比例(1-剩余/总)，正计时=已计时/设定时长（封顶 1）。
+  // 圆环“要画多少”比例(0~1)，统一为 timeLeft/总时长：
+  //  · 倒计时：timeLeft 是剩余 → 一开始满圈(1)，随时间排空(→0)
+  //  · 正计时：timeLeft 是已计时 → 一开始空(0)，逐渐填满(封顶1)
+  // 单一表达式且只依赖 timeLeft 与当前模式，避免启动/切换时进度条闪烁。
   const cfgSec = cfg.minutes * 60;
-  const ringProgress = countUp
-    ? Math.min(1, timeLeft / Math.max(1, cfgSec))
-    : (cfgSec > 0 ? 1 - timeLeft / cfgSec : 0);
+  const ringProgress = cfgSec > 0 ? Math.min(1, Math.max(0, timeLeft) / cfgSec) : 0;
 
   return (
     <View style={[styles.wrap, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
