@@ -1,14 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Path, Line, Text as SvgText, G } from 'react-native-svg';
 import { SUBJECTS, COLORS } from '../constants';
 import { formatDuration } from '../storage';
 
-const SIZE = 200;
-const CX = SIZE / 2;
-const CY = SIZE / 2;
-const OUTER_R = 88;
-const INNER_R = 52; // donut hole
+// viewBox 比绘图区更宽，给左右标签留出文字空间（避免引出线标签出屏被裁切）
+const VB_W = 360;
+const VB_H = 300;
+const CX = VB_W / 2;   // 180
+const CY = VB_H / 2;   // 150
+const OUTER_R = 84;
+const INNER_R = 52;    // donut hole
+const LABEL_LINE = 10; // 引出线斜段长度（原 20，缩短）
+const LABEL_EXT = 10;  // 引出线水平段长度（原 40，缩短）
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -37,12 +41,14 @@ export default function PieChart({ data, totalSec }) {
   let currentAngle = 0;
   const slices = entries.map(entry => {
     const angle = (entry.seconds / totalSec) * 360;
+    const midAngle = currentAngle + angle / 2;
     const pct = Math.round((entry.seconds / totalSec) * 100);
     const slice = {
       ...entry,
       startAngle: currentAngle,
-      // 留一点缝隙，避免单科占满时首尾相接导致整圈不渲染
+      // 留极小缝隙，避免单科 100% 时首尾相接导致整圈不渲染
       endAngle: currentAngle + (angle >= 360 ? 359.999 : angle),
+      midAngle,
       pct,
     };
     currentAngle += angle;
@@ -65,9 +71,25 @@ export default function PieChart({ data, totalSec }) {
     ].join(' ');
   };
 
+  // 引出线端点（线已缩短，标签靠近圆环，留在 viewBox 内）
+  const getLeaderPoints = (midAngle) => {
+    const start = polarToXY(CX, CY, OUTER_R + 3, midAngle);
+    const lineEnd = polarToXY(CX, CY, OUTER_R + LABEL_LINE, midAngle);
+    const isRight = midAngle <= 180;
+    const extX = isRight ? lineEnd.x + LABEL_EXT : lineEnd.x - LABEL_EXT;
+    return {
+      lineStart: start,
+      lineBend: lineEnd,
+      labelX: extX,
+      labelY: lineEnd.y,
+      textAnchor: isRight ? 'start' : 'end',
+    };
+  };
+
   return (
     <View style={styles.container}>
-      <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      <Svg width={300} height={250} viewBox={`0 0 ${VB_W} ${VB_H}`}>
+        {/* Slices */}
         {slices.map(slice => (
           <Path
             key={slice.key}
@@ -77,39 +99,63 @@ export default function PieChart({ data, totalSec }) {
           />
         ))}
 
+        {/* Leader lines + labels */}
+        {slices.map(slice => {
+          const pts = getLeaderPoints(slice.midAngle);
+          const textX = pts.labelX + (pts.textAnchor === 'start' ? 5 : -5);
+          return (
+            <G key={`label-${slice.key}`}>
+              <Line
+                x1={pts.lineStart.x} y1={pts.lineStart.y}
+                x2={pts.lineBend.x} y2={pts.lineBend.y}
+                stroke={COLORS.text2} strokeWidth={1} opacity={0.6}
+              />
+              <Line
+                x1={pts.lineBend.x} y1={pts.lineBend.y}
+                x2={pts.labelX} y2={pts.labelY}
+                stroke={COLORS.text2} strokeWidth={1} opacity={0.6}
+              />
+              {/* 切片边缘小圆点 */}
+              <Path
+                d={`M ${pts.lineStart.x - 3} ${pts.lineStart.y}
+                    A 3 3 0 1 1 ${pts.lineStart.x + 3} ${pts.lineStart.y}
+                    A 3 3 0 1 1 ${pts.lineStart.x - 3} ${pts.lineStart.y}`}
+                fill={slice.color}
+              />
+              <SvgText
+                x={textX} y={pts.labelY - 5}
+                fill={COLORS.text} fontSize="12" fontWeight="600"
+                textAnchor={pts.textAnchor}
+              >
+                {slice.icon} {slice.name}
+              </SvgText>
+              <SvgText
+                x={textX} y={pts.labelY + 9}
+                fill={COLORS.text2} fontSize="10"
+                textAnchor={pts.textAnchor}
+              >
+                {formatDuration(slice.seconds)} · {slice.pct}%
+              </SvgText>
+            </G>
+          );
+        })}
+
         {/* Center total */}
         <SvgText
-          x={CX} y={CY - 4}
-          fill={COLORS.text}
-          fontSize="18"
-          fontWeight="700"
+          x={CX} y={CY - 5}
+          fill={COLORS.text} fontSize="17" fontWeight="700"
           textAnchor="middle"
         >
           {formatDuration(totalSec)}
         </SvgText>
         <SvgText
-          x={CX} y={CY + 14}
-          fill={COLORS.text2}
-          fontSize="11"
+          x={CX} y={CY + 13}
+          fill={COLORS.text2} fontSize="11"
           textAnchor="middle"
         >
           总计
         </SvgText>
       </Svg>
-
-      {/* Legend below — always on screen, never clipped */}
-      <View style={styles.legend}>
-        {slices.map(slice => (
-          <View key={slice.key} style={styles.legendRow}>
-            <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
-            <Text style={styles.legendName} numberOfLines={1}>
-              {slice.icon} {slice.name}
-            </Text>
-            <Text style={styles.legendTime}>{formatDuration(slice.seconds)}</Text>
-            <Text style={styles.legendPct}>{slice.pct}%</Text>
-          </View>
-        ))}
-      </View>
     </View>
   );
 }
@@ -118,23 +164,7 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
   },
-  legend: {
-    width: '100%',
-    paddingHorizontal: 24,
-    marginTop: 8,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    gap: 10,
-  },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendName: { flex: 1, fontSize: 14, color: COLORS.text },
-  legendTime: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  legendPct: { fontSize: 12, color: COLORS.text2, width: 40, textAlign: 'right' },
   empty: {
     alignItems: 'center',
     paddingVertical: 40,
