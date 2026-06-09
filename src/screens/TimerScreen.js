@@ -332,6 +332,7 @@ export default function TimerScreen({ navigation }) {
             <View style={styles.handle} />
             <Text style={styles.sheetT}>⚙️ 设置</Text>
 
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.lbl}>⏱️ 时长（分钟）</Text>
             {[{ k: 'work', lab: '📖', name: '学习', f: 'work' },{ k: 'short', lab: '☕', name: '短休', f: 'short' },{ k: 'long', lab: '😴', name: '长休', f: 'long' }].map(item => (
               <View key={item.k} style={styles.dr}>
@@ -375,10 +376,6 @@ export default function TimerScreen({ navigation }) {
               <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
               <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
             </TouchableOpacity>
-            <Text style={styles.notifHint}>
-              想要微信那样"飘下来"的弹窗提醒：进系统设置里把研途的「横幅/悬浮通知」「锁屏通知」打开，
-              并关闭电池优化，番茄钟与日程提醒就能在退出 App、锁屏时照常弹出。
-            </Text>
 
             <Text style={[styles.lbl, { marginTop: 16 }]}>🖼️ 背景</Text>
             {bgUri ? <Image source={bgUri} style={styles.prev} contentFit="cover" /> : <View style={[styles.prev, { backgroundColor: COLORS.card2, justifyContent: 'center', alignItems: 'center' }]}><Text style={{ color: COLORS.text2 }}>未设置</Text></View>}
@@ -388,6 +385,7 @@ export default function TimerScreen({ navigation }) {
             </View>
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 14 }} onPress={() => setShowSettings(false)}><Text style={{ color: COLORS.text2 }}>关闭</Text></TouchableOpacity>
             <Text style={{ color: COLORS.text2, textAlign: 'center', fontSize: 11, opacity: 0.6, paddingBottom: 8 }}>研途 · 版本 v{APP_VERSION_CODE}</Text>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -456,7 +454,7 @@ const styles = StyleSheet.create({
   end: { backgroundColor: COLORS.card, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 30 },
   endT: { color: COLORS.text2, fontSize: 14 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: COLORS.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  sheet: { backgroundColor: COLORS.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' },
   handle: { width: 36, height: 4, backgroundColor: COLORS.card2, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetT: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 14 },
   lbl: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 8 },
@@ -473,7 +471,6 @@ const styles = StyleSheet.create({
   notifBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.card2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
   notifBtnT: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   notifBtnArrow: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
-  notifHint: { fontSize: 11, color: COLORS.text2, lineHeight: 16, opacity: 0.8, marginBottom: 4 },
   lockBtn: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.lock, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 },
   lockBtnOn: { backgroundColor: COLORS.success, borderColor: COLORS.success },
   lockBtnT: { color: COLORS.lock, fontSize: 13, fontWeight: '600' },

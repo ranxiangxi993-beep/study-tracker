@@ -67,6 +67,14 @@ export async function addManualSession(subject, seconds, date) {
   await saveSessions(sessions);
 }
 
+// 删除所有手动补录/扣减的记录（manual:true），不动真实计时记录。
+export async function clearManualSessions() {
+  const sessions = await getSessions();
+  const removed = sessions.filter(s => s.manual).length;
+  await saveSessions(sessions.filter(s => !s.manual));
+  return removed;
+}
+
 // Get active (unfinished) session
 export async function getActiveSession() {
   const sessions = await getSessions();
@@ -105,7 +113,8 @@ export async function getWeekStats() {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     const dateStr = localDate(d);
-    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0);
+    // 柱状图只反映真实计时，不含手动补录（手动补录只进区间合计/饼图）
+    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0 && !s.manual);
     const bySubject = {};
     let total = 0;
     daySessions.forEach(s => {
@@ -145,9 +154,9 @@ export async function getYearlyHeatmap(year) {
     days[key] = 0;
   }
 
-  // Sum durations per day
+  // Sum durations per day（热力图同样只反映真实计时，不含手动补录）
   sessions.forEach(s => {
-    if (s.duration !== 0 && days[s.date] !== undefined) {
+    if (s.duration !== 0 && !s.manual && days[s.date] !== undefined) {
       days[s.date] += s.duration;
     }
   });

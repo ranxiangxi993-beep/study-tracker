@@ -11,7 +11,7 @@ import { useBg } from '../../App';
 import {
   getPeriodStats, getHistory, getHistoryCount,
   getHistoryInRange, getHistoryCountInRange,
-  deleteSession, addManualSession, formatDuration, getWeekStats,
+  deleteSession, addManualSession, clearManualSessions, formatDuration, getWeekStats,
   getYearlyHeatmap, getStatsInRange, localDate,
 } from '../storage';
 
@@ -136,25 +136,41 @@ export default function StatsScreen() {
     ]);
   };
 
-  // 这笔总时长落在所选区间的起点那天（本周→周一 / 本月→1号 / 本年→1月1日），
-  // 这样它计入该周/月/年合计，又不会全堆到"今天"。
+  const PERIOD_LABELS = { week: '本周', month: '本月', year: '本年' };
+
+  // 手动补录只进"区间合计/饼图"，不进柱状图/热力图，所以记到区间起点那天即可
+  // （本周→周一 / 本月→1号 / 本年→1月1日），让 getStatsInRange 把它算进该区间合计。
   const periodAnchor = (p) => {
     const now = new Date();
     if (p === 'week') { const day = now.getDay() || 7; const mon = new Date(now); mon.setDate(now.getDate() - day + 1); return mon; }
     if (p === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
     return new Date(now.getFullYear(), 0, 1); // year
   };
-  const PERIOD_LABELS = { week: '本周', month: '本月', year: '本年' };
 
   const saveManual = async () => {
     const min = parseInt(manualMin) || 0;
     if (min <= 0) { Alert.alert('请输入分钟数'); return; }
-    await addManualSession(manualSubject, manualSign * min * 60, localDate(periodAnchor(manualPeriod)));
+    let secs = min * 60;
+    if (manualSign === -1) {
+      // 扣减只从该区间该科目已有时长里扣，扣到 0 为止，不出现负数
+      const ps = await getPeriodStats(manualPeriod);
+      const have = ps.subjects?.[manualSubject] || 0;
+      if (have <= 0) { Alert.alert('无可扣减', `${PERIOD_LABELS[manualPeriod]}「${SUBJECTS[manualSubject]?.name}」暂无可扣减的时长`); return; }
+      secs = -Math.min(secs, have);
+    }
+    await addManualSession(manualSubject, secs, localDate(periodAnchor(manualPeriod)));
     setShowManual(false);
     setManualMin('30');
     setManualSign(1);
     setManualPeriod('month');
     loadAll();
+  };
+
+  const handleClearManual = () => {
+    Alert.alert('清空手动补录', '将删除所有"手动补录/扣减"的记录（不影响真实计时记录），确定吗？', [
+      { text: '取消', style: 'cancel' },
+      { text: '清空', style: 'destructive', onPress: async () => { const n = await clearManualSessions(); Alert.alert('已清空', `删除了 ${n} 条手动记录`); loadAll(); } },
+    ]);
   };
 
   // 分钟数友好提示（几十小时时显示约几小时）
@@ -308,14 +324,20 @@ export default function StatsScreen() {
             <Text style={styles.mHint}>
               {manualSign === 1 ? '将把 ' : '将从 '}{PERIOD_LABELS[manualPeriod]}「{SUBJECTS[manualSubject]?.name}」
               {manualSign === 1 ? '合计增加 ' : '合计扣减 '}{manualMinNum} 分钟{manualHourHint}
+              {'\n'}（仅计入合计与饼图，不影响每日柱状图/热力图）
             </Text>
 
             <TouchableOpacity style={[styles.saveManual, manualSign === -1 && { backgroundColor: COLORS.lock }]} onPress={saveManual}>
               <Text style={styles.saveManualText}>{manualSign === 1 ? '确认增加' : '确认扣减'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowManual(false)}>
-              <Text style={{ color: COLORS.text2 }}>取消</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10 }}>
+              <TouchableOpacity style={{ paddingVertical: 6, paddingHorizontal: 4 }} onPress={() => setShowManual(false)}>
+                <Text style={{ color: COLORS.text2 }}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ paddingVertical: 6, paddingHorizontal: 4 }} onPress={handleClearManual}>
+                <Text style={{ color: COLORS.lock, fontSize: 12 }}>🗑 清空全部手动补录</Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>

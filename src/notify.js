@@ -30,7 +30,11 @@ export async function openNotificationSettings() {
 // 所以这里改用 expo-notifications 预约通知，并对日程用"每日重复"触发器。
 // ============================================================================
 
-const CHANNEL_ID = 'study-reminders';
+// ⚠️ 安卓通知渠道一旦创建，其重要性/震动等设置就被系统永久缓存，
+// 后续用 setNotificationChannelAsync 改 importance 不会生效（这就是"升到 MAX 也不弹横幅/不震动"的真因）。
+// 因此换一个新渠道 id，让 MAX 重要性 + 震动真正落地；并删掉旧渠道。
+const CHANNEL_ID = 'study-reminders-max';
+const OLD_CHANNEL_IDS = ['study-reminders'];
 const PLAN_IDS_KEY = 'plan_notif_ids';
 
 // 前台收到通知时也弹出横幅(否则前台默认静默)
@@ -49,6 +53,10 @@ let permGranted = false;
 export async function ensureNotifPermission() {
   try {
     if (Platform.OS === 'android') {
+      // 删掉旧渠道（旧设置已被系统缓存、改不动）
+      for (const old of OLD_CHANNEL_IDS) {
+        try { await Notifications.deleteNotificationChannelAsync(old); } catch (_) {}
+      }
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
         name: '学习提醒',
         // MAX = 安卓"紧急/横幅"级别，才会像微信那样以悬浮横幅弹出（HIGH 在部分 ROM 只进通知栏）
