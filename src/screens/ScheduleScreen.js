@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Pla
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
+import { syncPlanNotifications } from '../notify';
 
 const STORAGE_KEY = 'daily_plan';
 
@@ -21,6 +22,8 @@ export default function ScheduleScreen() {
   const savePlan = async (newPlan) => {
     setPlan(newPlan);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newPlan));
+    // 计划变化后重建系统级每日提醒
+    syncPlanNotifications();
   };
 
   const handleSaveItem = (item) => {

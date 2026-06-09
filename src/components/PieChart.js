@@ -1,27 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Line, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { SUBJECTS, COLORS } from '../constants';
 import { formatDuration } from '../storage';
 
-const SIZE = 300;
+const SIZE = 200;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
-const OUTER_R = 90;
-const INNER_R = 50; // donut hole
-const LABEL_LINE = 20; // leader line length
-const LABEL_EXT = 40; // horizontal extension
+const OUTER_R = 88;
+const INNER_R = 52; // donut hole
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
-}
-
-function describeArc(cx, cy, r, startAngle, endAngle) {
-  const start = polarToXY(cx, cy, r, endAngle);
-  const end = polarToXY(cx, cy, r, startAngle);
-  const large = endAngle - startAngle > 180 ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 0 ${end.x} ${end.y}`;
 }
 
 export default function PieChart({ data, totalSec }) {
@@ -33,7 +24,7 @@ export default function PieChart({ data, totalSec }) {
     }))
     .filter(e => e.seconds > 0);
 
-  if (entries.length === 0) {
+  if (entries.length === 0 || !totalSec) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyIcon}>📊</Text>
@@ -46,13 +37,12 @@ export default function PieChart({ data, totalSec }) {
   let currentAngle = 0;
   const slices = entries.map(entry => {
     const angle = (entry.seconds / totalSec) * 360;
-    const midAngle = currentAngle + angle / 2;
     const pct = Math.round((entry.seconds / totalSec) * 100);
     const slice = {
       ...entry,
       startAngle: currentAngle,
-      endAngle: currentAngle + angle,
-      midAngle,
+      // 留一点缝隙，避免单科占满时首尾相接导致整圈不渲染
+      endAngle: currentAngle + (angle >= 360 ? 359.999 : angle),
       pct,
     };
     currentAngle += angle;
@@ -75,113 +65,51 @@ export default function PieChart({ data, totalSec }) {
     ].join(' ');
   };
 
-  // Calculate leader line endpoints
-  const getLeaderPoints = (midAngle) => {
-    // Start from middle of the donut ring
-    const midR = (OUTER_R + INNER_R) / 2;
-    const start = polarToXY(CX, CY, OUTER_R + 4, midAngle);
-
-    // End point extends outward
-    const lineEndR = OUTER_R + LABEL_LINE;
-    const lineEnd = polarToXY(CX, CY, lineEndR, midAngle);
-
-    // Horizontal extension
-    const isRight = midAngle > 180 ? false : true;
-    const extX = isRight ? lineEnd.x + LABEL_EXT : lineEnd.x - LABEL_EXT;
-
-    return {
-      lineStart: start,
-      lineBend: lineEnd,
-      labelX: extX,
-      labelY: lineEnd.y,
-      textAnchor: isRight ? 'start' : 'end',
-      alignment: isRight ? 'left' : 'right',
-    };
-  };
-
   return (
     <View style={styles.container}>
       <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-        {/* Slices */}
         {slices.map(slice => (
           <Path
             key={slice.key}
             d={donutPath(slice.startAngle, slice.endAngle)}
             fill={slice.color}
-            opacity={0.85}
+            opacity={0.9}
           />
         ))}
 
-        {/* Leader lines + labels */}
-        {slices.map(slice => {
-          const pts = getLeaderPoints(slice.midAngle);
-          return (
-            <G key={`label-${slice.key}`}>
-              {/* Leader line */}
-              <Line
-                x1={pts.lineStart.x} y1={pts.lineStart.y}
-                x2={pts.lineBend.x} y2={pts.lineBend.y}
-                stroke={COLORS.text2}
-                strokeWidth={1}
-                opacity={0.6}
-              />
-              <Line
-                x1={pts.lineBend.x} y1={pts.lineBend.y}
-                x2={pts.labelX} y2={pts.labelY}
-                stroke={COLORS.text2}
-                strokeWidth={1}
-                opacity={0.6}
-              />
-              {/* Dot at slice edge */}
-              <Path
-                d={`M ${pts.lineStart.x - 3} ${pts.lineStart.y}
-                    A 3 3 0 1 1 ${pts.lineStart.x + 3} ${pts.lineStart.y}
-                    A 3 3 0 1 1 ${pts.lineStart.x - 3} ${pts.lineStart.y}`}
-                fill={slice.color}
-              />
-              {/* Label text */}
-              <SvgText
-                x={pts.labelX + (pts.textAnchor === 'start' ? 6 : -6)}
-                y={pts.labelY - 6}
-                fill={COLORS.text}
-                fontSize="11"
-                fontWeight="600"
-                textAnchor={pts.textAnchor}
-              >
-                {slice.icon} {slice.name}
-              </SvgText>
-              <SvgText
-                x={pts.labelX + (pts.textAnchor === 'start' ? 6 : -6)}
-                y={pts.labelY + 8}
-                fill={COLORS.text2}
-                fontSize="10"
-                textAnchor={pts.textAnchor}
-              >
-                {formatDuration(slice.seconds)} · {slice.pct}%
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* Center text */}
+        {/* Center total */}
         <SvgText
-          x={CX} y={CY - 6}
+          x={CX} y={CY - 4}
           fill={COLORS.text}
-          fontSize="16"
+          fontSize="18"
           fontWeight="700"
           textAnchor="middle"
         >
           {formatDuration(totalSec)}
         </SvgText>
         <SvgText
-          x={CX} y={CY + 12}
+          x={CX} y={CY + 14}
           fill={COLORS.text2}
-          fontSize="10"
+          fontSize="11"
           textAnchor="middle"
         >
           总计
         </SvgText>
       </Svg>
+
+      {/* Legend below — always on screen, never clipped */}
+      <View style={styles.legend}>
+        {slices.map(slice => (
+          <View key={slice.key} style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
+            <Text style={styles.legendName} numberOfLines={1}>
+              {slice.icon} {slice.name}
+            </Text>
+            <Text style={styles.legendTime}>{formatDuration(slice.seconds)}</Text>
+            <Text style={styles.legendPct}>{slice.pct}%</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -190,7 +118,23 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
+  legend: {
+    width: '100%',
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    gap: 10,
+  },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendName: { flex: 1, fontSize: 14, color: COLORS.text },
+  legendTime: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  legendPct: { fontSize: 12, color: COLORS.text2, width: 40, textAlign: 'right' },
   empty: {
     alignItems: 'center',
     paddingVertical: 40,

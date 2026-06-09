@@ -15,7 +15,7 @@ import ScheduleScreen from './src/screens/ScheduleScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import CountdownScreen from './src/screens/CountdownScreen';
 import { COLORS, APP_VERSION_CODE } from './src/constants';
-import { startScheduleMonitor } from './src/notify';
+import { ensureNotifPermission, syncPlanNotifications } from './src/notify';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -172,7 +172,8 @@ export default function App() {
 
   useEffect(() => {
     AsyncStorage.getItem('bg_image').then(data => { if (data) setBgUri(data); });
-    startScheduleMonitor();
+    // 申请通知权限后，把每日计划重建成系统级"每日重复"提醒（后台/杀进程也会响）
+    ensureNotifPermission().then(syncPlanNotifications);
     setTimeout(checkForUpdate, 3000);
   }, []);
 

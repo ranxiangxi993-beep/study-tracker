@@ -67,7 +67,13 @@ export default function CountdownScreen({ navigation }) {
   const elapsedMs  = studyStart ? Math.max(0, now - studyStart) : 0;
   const totalMs    = studyStart ? Math.max(1, KAOYAN_TARGET - studyStart) : 1;
   const pct        = studyStart ? Math.min(100, Math.round(elapsedMs / totalMs * 100)) : 0;
-  const studiedDays = studyStart ? Math.floor(elapsedMs / 86400000) : 0;
+  // 已备考天数按自然日计算，含起始当天(第1天)，不受设置开始日期时的时刻影响
+  const studiedDays = studyStart
+    ? Math.floor(
+        (new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          - new Date(studyStart.getFullYear(), studyStart.getMonth(), studyStart.getDate()))
+        / 86400000) + 1
+    : 0;
 
   const SZ = 260, CX = 130, CY = 130, R = 104;
   const FULL = 2 * Math.PI * R;

@@ -50,6 +50,23 @@ export async function stopSession(sessionId, note = '') {
   return session;
 }
 
+// Manually add a completed session (补录/手动记录). seconds 可正可负（负=扣减当天该科时长）
+export async function addManualSession(subject, seconds, date) {
+  const sessions = await getSessions();
+  const now = new Date();
+  sessions.push({
+    id: Date.now(),
+    subject,
+    start_time: now.toISOString(),
+    end_time: now.toISOString(),
+    duration: Math.round(seconds),
+    date: date || localDate(),
+    note: seconds < 0 ? '手动扣减' : '手动补录',
+    manual: true,
+  });
+  await saveSessions(sessions);
+}
+
 // Get active (unfinished) session
 export async function getActiveSession() {
   const sessions = await getSessions();
@@ -67,7 +84,7 @@ export async function deleteSession(id) {
 export async function getTodayStats() {
   const sessions = await getSessions();
   const today = localDate();
-  const todaySessions = sessions.filter(s => s.date === today && s.duration > 0);
+  const todaySessions = sessions.filter(s => s.date === today && s.duration !== 0);
   const bySubject = {};
   todaySessions.forEach(s => {
     bySubject[s.subject] = (bySubject[s.subject] || 0) + s.duration;
@@ -88,7 +105,7 @@ export async function getWeekStats() {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     const dateStr = localDate(d);
-    const daySessions = sessions.filter(s => s.date === dateStr && s.duration > 0);
+    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0);
     const bySubject = {};
     let total = 0;
     daySessions.forEach(s => {
@@ -102,7 +119,7 @@ export async function getWeekStats() {
 
 export async function getTotalStats() {
   const sessions = await getSessions();
-  const completed = sessions.filter(s => s.duration > 0);
+  const completed = sessions.filter(s => s.duration !== 0);
   const bySubject = {};
   completed.forEach(s => {
     if (!bySubject[s.subject]) bySubject[s.subject] = { seconds: 0, count: 0 };
@@ -130,7 +147,7 @@ export async function getYearlyHeatmap(year) {
 
   // Sum durations per day
   sessions.forEach(s => {
-    if (s.duration > 0 && days[s.date] !== undefined) {
+    if (s.duration !== 0 && days[s.date] !== undefined) {
       days[s.date] += s.duration;
     }
   });
@@ -142,7 +159,7 @@ export async function getYearlyHeatmap(year) {
 export async function getStatsInRange(startDate, endDate) {
   const sessions = await getSessions();
   const inRange = sessions.filter(s => {
-    return s.date >= startDate && s.date <= endDate && s.duration > 0;
+    return s.date >= startDate && s.date <= endDate && s.duration !== 0;
   });
   const bySubject = {};
   let total = 0;
@@ -204,27 +221,27 @@ export async function getStreak() {
 export async function getHistory(limit = 30, offset = 0) {
   const sessions = await getSessions();
   return sessions
-    .filter(s => s.duration > 0)
+    .filter(s => s.duration !== 0)
     .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
     .slice(offset, offset + limit);
 }
 
 export async function getHistoryCount() {
   const sessions = await getSessions();
-  return sessions.filter(s => s.duration > 0).length;
+  return sessions.filter(s => s.duration !== 0).length;
 }
 
 export async function getHistoryInRange(startDate, endDate, limit = 30, offset = 0) {
   const sessions = await getSessions();
   return sessions
-    .filter(s => s.duration > 0 && s.date >= startDate && s.date <= endDate)
+    .filter(s => s.duration !== 0 && s.date >= startDate && s.date <= endDate)
     .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
     .slice(offset, offset + limit);
 }
 
 export async function getHistoryCountInRange(startDate, endDate) {
   const sessions = await getSessions();
-  return sessions.filter(s => s.duration > 0 && s.date >= startDate && s.date <= endDate).length;
+  return sessions.filter(s => s.duration !== 0 && s.date >= startDate && s.date <= endDate).length;
 }
 
 // ====== Goals ======
@@ -243,10 +260,12 @@ export async function setGoal(subject, minutes) {
 // ====== Helpers ======
 
 export function formatDuration(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}时${m}分`;
-  if (m > 0) return `${m}分${s}秒`;
-  return `${s}秒`;
+  const neg = seconds < 0 ? '-' : '';
+  const a = Math.abs(seconds);
+  const h = Math.floor(a / 3600);
+  const m = Math.floor((a % 3600) / 60);
+  const s = a % 60;
+  if (h > 0) return `${neg}${h}时${m}分`;
+  if (m > 0) return `${neg}${m}分${s}秒`;
+  return `${neg}${s}秒`;
 }

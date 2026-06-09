@@ -12,7 +12,7 @@ import SubjectSelector from '../components/SubjectSelector';
 import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
-import { celebrateComplete, remindBreak } from '../notify';
+import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled } from '../notify';
 import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
@@ -49,6 +49,7 @@ export default function TimerScreen({ navigation }) {
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const pausedMsRef = useRef(0);
+  const notifIdRef = useRef(null); // 预约的"计时结束"系统通知 id
 
   const getElapsed = useCallback(() => {
     if (!startTimeRef.current) return 0;
@@ -70,6 +71,7 @@ export default function TimerScreen({ navigation }) {
 
   const finish = useCallback(async () => {
     Vibration.vibrate([500, 200, 500, 200, 800]);
+    cancelScheduled(notifIdRef.current); notifIdRef.current = null; // 前台已触发，撤掉系统通知免重复
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const actual = getElapsed();
     if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
@@ -82,6 +84,7 @@ export default function TimerScreen({ navigation }) {
 
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
+    const elapsedAtStart = isPaused ? pausedMsRef.current : 0;
     if (!isPaused) {
       if (mode === 'work') setSessionId(await startSession(activeSubject));
       startTimeRef.current = Date.now();
@@ -91,6 +94,12 @@ export default function TimerScreen({ navigation }) {
     }
     setIsRunning(true); setIsPaused(false);
     if (!isPaused) setQuote(nextQuote());
+    // 预约"计时结束"系统通知：倒计时模式才有终点；App 退后台/被杀也会响
+    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    if (!countUp) {
+      const remaining = modes[mode].minutes * 60 - elapsedAtStart;
+      notifIdRef.current = await scheduleTimerEnd(remaining, mode === 'work', SUBJECTS[activeSubject]?.name);
+    }
     clearInterval(timerRef.current);
     timerRef.current = setInterval(updateDisplay, 200);
     updateDisplay();
@@ -99,9 +108,11 @@ export default function TimerScreen({ navigation }) {
   const doPause = useCallback(() => {
     setIsPaused(true); clearInterval(timerRef.current);
     pausedMsRef.current = getElapsed();
+    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
   }, [getElapsed]);
   const doStop = useCallback(async () => {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
+    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
     if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
@@ -109,6 +120,7 @@ export default function TimerScreen({ navigation }) {
 
   const switchMode = useCallback((m) => {
     if (isRunning) { clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
+      cancelScheduled(notifIdRef.current); notifIdRef.current = null;
       if (mode === 'work' && sessionId) { stopSession(sessionId); setSessionId(null); }
     }
     setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
@@ -120,6 +132,7 @@ export default function TimerScreen({ navigation }) {
       Alert.alert('切换科目', '会结束当前计时', [{ text: '取消', style: 'cancel' }, {
         text: '确定', onPress: async () => {
           if (sessionId) { await stopSession(sessionId); setSessionId(null); }
+          cancelScheduled(notifIdRef.current); notifIdRef.current = null;
           clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
           setTimeLeft(countUp ? 0 : modes[mode].minutes * 60); setActiveSubject(key);
           startTimeRef.current = null;
@@ -162,7 +175,13 @@ export default function TimerScreen({ navigation }) {
       const remain = Math.max(0, target - now);
       setCdDays(Math.floor(remain / 86400000));
       AsyncStorage.getItem('kaoyan_study_start').then(v => {
-        if (v) setCdStudied(Math.floor((now - new Date(v)) / 86400000));
+        if (v) {
+          // 按自然日算，含起始当天(第1天)，不受设置时刻影响
+          const st = new Date(v);
+          const sMid = new Date(st.getFullYear(), st.getMonth(), st.getDate());
+          const nMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          setCdStudied(Math.floor((nMid - sMid) / 86400000) + 1);
+        }
       });
     };
     refreshCd();

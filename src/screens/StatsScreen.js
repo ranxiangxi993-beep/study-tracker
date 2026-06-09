@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform,
+  Modal, TextInput, Pressable,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import PieChart from '../components/PieChart';
@@ -10,7 +11,7 @@ import { useBg } from '../../App';
 import {
   getPeriodStats, getHistory, getHistoryCount,
   getHistoryInRange, getHistoryCountInRange,
-  deleteSession, formatDuration, getWeekStats,
+  deleteSession, addManualSession, formatDuration, getWeekStats,
   getYearlyHeatmap, getStatsInRange, localDate,
 } from '../storage';
 
@@ -75,6 +76,12 @@ export default function StatsScreen() {
   const [selMonth, setSelMonth] = useState(now.getMonth());
   const [selYear, setSelYear] = useState(now.getFullYear());
 
+  // 手动增减时长
+  const [showManual, setShowManual] = useState(false);
+  const [manualSubject, setManualSubject] = useState('english');
+  const [manualMin, setManualMin] = useState('30');
+  const [manualSign, setManualSign] = useState(1); // 1 = 增加, -1 = 扣减
+
   useFocusEffect(
     useCallback(() => {
       loadAll();
@@ -128,6 +135,16 @@ export default function StatsScreen() {
     ]);
   };
 
+  const saveManual = async () => {
+    const min = parseInt(manualMin) || 0;
+    if (min <= 0) { Alert.alert('请输入分钟数'); return; }
+    await addManualSession(manualSubject, manualSign * min * 60);
+    setShowManual(false);
+    setManualMin('30');
+    setManualSign(1);
+    loadAll();
+  };
+
   const periodLabel = PERIODS.find(p => p.key === period)?.label || '';
 
   // Week bar chart data (only show for day/week period)
@@ -137,6 +154,9 @@ export default function StatsScreen() {
     <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
       <View style={styles.header}>
         <Text style={styles.title}>📊 学习统计 · {sessionsTotal}次</Text>
+        <TouchableOpacity style={styles.manualBtn} onPress={() => setShowManual(true)}>
+          <Text style={styles.manualBtnText}>✏️ 手动记录</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -253,14 +273,73 @@ export default function StatsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* 手动记录 Modal */}
+      <Modal visible={showManual} animationType="slide" transparent onRequestClose={() => setShowManual(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowManual(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetT}>✏️ 手动记录时长</Text>
+
+            {/* 增加 / 扣减 */}
+            <View style={styles.signRow}>
+              {[{ v: 1, lab: '➕ 增加' }, { v: -1, lab: '➖ 扣减' }].map(o => (
+                <TouchableOpacity key={o.v}
+                  style={[styles.signTab, manualSign === o.v && (o.v === 1 ? styles.signTabAdd : styles.signTabSub)]}
+                  onPress={() => setManualSign(o.v)}>
+                  <Text style={[styles.signTabText, manualSign === o.v && { color: '#fff' }]}>{o.lab}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* 科目 */}
+            <Text style={styles.mLbl}>科目</Text>
+            <View style={styles.subjGrid}>
+              {Object.entries(SUBJECTS).map(([key, subj]) => (
+                <TouchableOpacity key={key}
+                  style={[styles.subjChip, manualSubject === key && { backgroundColor: subj.color + '33', borderColor: subj.color }]}
+                  onPress={() => setManualSubject(key)}>
+                  <Text style={[styles.subjChipText, manualSubject === key && { color: '#fff', fontWeight: '700' }]}>
+                    {subj.icon} {subj.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* 分钟数 */}
+            <Text style={styles.mLbl}>分钟数</Text>
+            <View style={styles.minRow}>
+              <TouchableOpacity onPress={() => setManualMin(p => String(Math.max(1, (parseInt(p) || 0) - 10)))}><Text style={styles.minBtn}>−10</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setManualMin(p => String(Math.max(1, (parseInt(p) || 0) - 5)))}><Text style={styles.minBtn}>−5</Text></TouchableOpacity>
+              <TextInput style={styles.minInput} keyboardType="numeric" value={manualMin} onChangeText={setManualMin} />
+              <TouchableOpacity onPress={() => setManualMin(p => String((parseInt(p) || 0) + 5))}><Text style={styles.minBtn}>+5</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setManualMin(p => String((parseInt(p) || 0) + 10))}><Text style={styles.minBtn}>+10</Text></TouchableOpacity>
+            </View>
+
+            <Text style={styles.mHint}>
+              {manualSign === 1 ? '将给今天的' : '将从今天的'}「{SUBJECTS[manualSubject]?.name}」
+              {manualSign === 1 ? '增加 ' : '扣减 '}{parseInt(manualMin) || 0} 分钟
+            </Text>
+
+            <TouchableOpacity style={[styles.saveManual, manualSign === -1 && { backgroundColor: COLORS.lock }]} onPress={saveManual}>
+              <Text style={styles.saveManualText}>{manualSign === 1 ? '确认增加' : '确认扣减'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowManual(false)}>
+              <Text style={{ color: COLORS.text2 }}>取消</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 8 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 8 },
   title: { fontSize: 20, fontWeight: '700', color: COLORS.text },
+  manualBtn: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 18 },
+  manualBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.text },
   scroll: { flex: 1 },
   periodTabs: {
     flexDirection: 'row', marginHorizontal: 20,
@@ -309,4 +388,24 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 13, color: COLORS.text2 },
   loadMore: { alignItems: 'center', paddingVertical: 14 },
   loadMoreText: { fontSize: 13, color: COLORS.text2 },
+  // 手动记录 Modal
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: COLORS.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
+  handle: { width: 36, height: 4, backgroundColor: COLORS.card2, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
+  sheetT: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 16 },
+  signRow: { flexDirection: 'row', backgroundColor: COLORS.card2, borderRadius: 12, padding: 4, gap: 4, marginBottom: 16 },
+  signTab: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center' },
+  signTabAdd: { backgroundColor: COLORS.success },
+  signTabSub: { backgroundColor: COLORS.lock },
+  signTabText: { fontSize: 14, fontWeight: '700', color: COLORS.text2 },
+  mLbl: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 8 },
+  subjGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  subjChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: COLORS.card2, borderWidth: 1.5, borderColor: 'transparent' },
+  subjChipText: { fontSize: 13, color: COLORS.text2 },
+  minRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14 },
+  minBtn: { fontSize: 15, fontWeight: '700', color: COLORS.accent, paddingHorizontal: 8, paddingVertical: 6 },
+  minInput: { backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, fontSize: 20, fontWeight: '700', color: COLORS.text, textAlign: 'center', width: 80, borderWidth: 1, borderColor: COLORS.card2 },
+  mHint: { fontSize: 12, color: COLORS.text2, textAlign: 'center', marginBottom: 16 },
+  saveManual: { backgroundColor: COLORS.success, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  saveManualText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
