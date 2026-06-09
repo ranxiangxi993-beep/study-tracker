@@ -5,14 +5,14 @@ import { SUBJECTS, COLORS } from '../constants';
 import { formatDuration } from '../storage';
 
 // viewBox 比绘图区更宽，给左右标签留出文字空间（避免引出线标签出屏被裁切）
-const VB_W = 360;
+const VB_W = 460;
 const VB_H = 300;
-const CX = VB_W / 2;   // 180
+const CX = VB_W / 2;   // 230
 const CY = VB_H / 2;   // 150
-const OUTER_R = 84;
-const INNER_R = 52;    // donut hole
-const LABEL_LINE = 10; // 引出线斜段长度（原 20，缩短）
-const LABEL_EXT = 10;  // 引出线水平段长度（原 40，缩短）
+const OUTER_R = 88;
+const INNER_R = 56;    // donut hole
+const LABEL_LINE = 22; // 引出线斜段长度（加长，标签离环更远更舒展）
+const LABEL_EXT = 34;  // 引出线水平段长度（加长）
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -88,7 +88,7 @@ export default function PieChart({ data, totalSec }) {
 
   return (
     <View style={styles.container}>
-      <Svg width={300} height={250} viewBox={`0 0 ${VB_W} ${VB_H}`}>
+      <Svg width={340} height={222} viewBox={`0 0 ${VB_W} ${VB_H}`}>
         {/* Slices */}
         {slices.map(slice => (
           <Path

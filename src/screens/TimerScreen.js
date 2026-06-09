@@ -10,9 +10,9 @@ import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsyn
 import TimerCircle from '../components/TimerCircle';
 import SubjectSelector from '../components/SubjectSelector';
 import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_CODE } from '../constants';
-import { startSession, stopSession, getActiveSession, getTodayStats, getStreak, formatDuration } from '../storage';
+import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
-import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled } from '../notify';
+import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings } from '../notify';
 import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
@@ -28,6 +28,7 @@ export default function TimerScreen({ navigation }) {
   const [showSettings, setShowSettings] = useState(false);
   const [countUp, setCountUp] = useState(false);
   const [accentColor, setAccentColor] = useState(COLORS.accent);
+  const [breakColors, setBreakColors] = useState({ short: '#5CB85C', long: '#4A90D9' }); // 短休/长休圆环色（各自可设）
   const [locked, setLocked] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const [appsList, setAppsList] = useState([]);
@@ -187,20 +188,30 @@ export default function TimerScreen({ navigation }) {
     refreshCd();
     const cdTimer = setInterval(refreshCd, 60000); // 每分钟更新天数
     AsyncStorage.getItem('custom_durations').then(d => {
-      if (d) { const v = JSON.parse(d); setCustomMin(v); setTimeLeft(v.work * 60); setTotalTime(v.work * 60); }
+      const v = d ? JSON.parse(d) : null;
+      if (v) setCustomMin(v);
+      const workSec = (v?.work || TIMER_MODES.work.minutes) * 60;
+      // 倒计时启动应满圈：先把初始时长摆满
+      setTimeLeft(workSec); setTotalTime(workSec);
+      // 结算上次遗留的未结束会话，避免"僵尸会话"让圆环停在残缺/冻结状态
+      getActiveSession().then(a => {
+        if (a) {
+          const el = Math.floor((Date.now() - new Date(a.start_time).getTime()) / 1000);
+          // 时长内照实结算；明显被遗忘(超过一个学习时长)则丢弃，不污染统计
+          if (el > 0 && el <= workSec) stopSession(a.id); else deleteSession(a.id);
+        }
+        setSessionId(null);
+        setTimeLeft(workSec); setTotalTime(workSec);
+      });
     });
     AsyncStorage.getItem('accent_color').then(c => { if (c) setAccentColor(c); });
+    AsyncStorage.getItem('break_colors').then(d => { if (d) setBreakColors(JSON.parse(d)); });
     AsyncStorage.getItem('wl_pkgs').then(d => { if (d) setWlPkgs(JSON.parse(d)); });
-    getActiveSession().then(a => {
-      if (a) { setActiveSubject(a.subject); setSessionId(a.id);
-        const el = Math.floor((Date.now() - new Date(a.start_time).getTime()) / 1000);
-        setTimeLeft(Math.max(0, TIMER_MODES.work.minutes * 60 - el)); setTotalTime(TIMER_MODES.work.minutes * 60); }
-    });
     getStreak().then(setStreak);
     return () => { clearInterval(timerRef.current); clearInterval(cdTimer); };
   }, []);
 
-  const timerColor = mode === 'work' ? accentColor : cfg.color;
+  const timerColor = mode === 'work' ? accentColor : (breakColors[mode] || COLORS.success);
   const isLight = accentColor.length === 7 && parseInt(accentColor.slice(1,3),16) > 200 && parseInt(accentColor.slice(3,5),16) > 200 && parseInt(accentColor.slice(5,7),16) > 200;
   const btnTextColor = isLight ? '#333' : '#fff';
   const label = !isRunning ? (countUp ? '正计时 · 00:00' : '准备开始') : (isPaused ? '已暂停' : (mode === 'work' ? `${SUBJECTS[activeSubject]?.name}` : '休息中...'));
@@ -332,7 +343,7 @@ export default function TimerScreen({ navigation }) {
             ))}
             <TouchableOpacity style={styles.sv} onPress={() => { saveDurations(); setShowSettings(false); }}><Text style={styles.svT}>保存时长</Text></TouchableOpacity>
 
-            <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 主题色</Text>
+            <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 学习圆环色</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
               {[COLORS.accent, '#4A90D9', '#5CB85C', '#9B59B6', '#f39c12', '#1abc9c', '#e91e63', '#00bcd4', '#ff9800', '#607d8b', '#ffffff', '#ff6b9d'].map(c => (
                 <TouchableOpacity key={c}
@@ -342,7 +353,34 @@ export default function TimerScreen({ navigation }) {
               ))}
             </View>
 
-            <Text style={[styles.lbl]}>🖼️ 背景</Text>
+            {[{ k: 'short', lab: '☕ 短休圆环色' }, { k: 'long', lab: '😴 长休圆环色' }].map(row => (
+              <View key={row.k}>
+                <Text style={[styles.lbl]}>{row.lab}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {['#5CB85C', '#4A90D9', '#1abc9c', '#00bcd4', '#9B59B6', '#f39c12', '#ff9800', '#607d8b', '#27ae60', '#3498db', '#ffffff', '#ff6b9d'].map(c => (
+                    <TouchableOpacity key={c}
+                      style={[styles.colorSwatch, { backgroundColor: c }, breakColors[row.k] === c && { borderWidth: 3, borderColor: '#fff' }]}
+                      onPress={() => {
+                        const next = { ...breakColors, [row.k]: c };
+                        setBreakColors(next); AsyncStorage.setItem('break_colors', JSON.stringify(next));
+                      }}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
+
+            <Text style={[styles.lbl]}>🔔 提醒</Text>
+            <TouchableOpacity style={styles.notifBtn} onPress={openNotificationSettings}>
+              <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
+              <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
+            </TouchableOpacity>
+            <Text style={styles.notifHint}>
+              想要微信那样"飘下来"的弹窗提醒：进系统设置里把研途的「横幅/悬浮通知」「锁屏通知」打开，
+              并关闭电池优化，番茄钟与日程提醒就能在退出 App、锁屏时照常弹出。
+            </Text>
+
+            <Text style={[styles.lbl, { marginTop: 16 }]}>🖼️ 背景</Text>
             {bgUri ? <Image source={bgUri} style={styles.prev} contentFit="cover" /> : <View style={[styles.prev, { backgroundColor: COLORS.card2, justifyContent: 'center', alignItems: 'center' }]}><Text style={{ color: COLORS.text2 }}>未设置</Text></View>}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity style={styles.bgb} onPress={pickBg}><Text style={styles.bgbT}>📁 选择图片</Text></TouchableOpacity>
@@ -432,6 +470,10 @@ const styles = StyleSheet.create({
   bgb: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   bgbT: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   colorSwatch: { width: 36, height: 36, borderRadius: 18 },
+  notifBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.card2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
+  notifBtnT: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  notifBtnArrow: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
+  notifHint: { fontSize: 11, color: COLORS.text2, lineHeight: 16, opacity: 0.8, marginBottom: 4 },
   lockBtn: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.lock, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 },
   lockBtnOn: { backgroundColor: COLORS.success, borderColor: COLORS.success },
   lockBtnT: { color: COLORS.lock, fontSize: 13, fontWeight: '600' },

@@ -8,8 +8,10 @@ const STROKE_WIDTH = 8;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const SIZE = (RADIUS + STROKE_WIDTH) * 2;
 
-// progress = 已进行比例(0~1)，由父组件按 mode 一致地算好传入，避免启动/切换时
-// timeLeft 与 totalTime 不同步导致的进度条闪烁。环从空填到满。
+// progress = 圆环要画多少(0~1)，由父组件按 mode 一致算好传入，避免启动/切换时
+// timeLeft 与 totalTime 不同步导致的进度条闪烁。
+//  · 倒计时：传入 timeLeft/总时长 → 启动即满圈(1)，随时间排空到 0
+//  · 正计时：传入 已计时/总时长 → 启动为空(0)，逐渐填满
 export default function TimerCircle({ timeLeft, progress = 0, modeColor, label }) {
   const p = Math.min(1, Math.max(0, progress || 0));
   const strokeDashoffset = CIRCUMFERENCE * (1 - p);

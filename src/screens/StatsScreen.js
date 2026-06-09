@@ -81,6 +81,7 @@ export default function StatsScreen() {
   const [manualSubject, setManualSubject] = useState('english');
   const [manualMin, setManualMin] = useState('30');
   const [manualSign, setManualSign] = useState(1); // 1 = 增加, -1 = 扣减
+  const [manualPeriod, setManualPeriod] = useState('month'); // 这笔总时长算进哪个区间
 
   useFocusEffect(
     useCallback(() => {
@@ -135,15 +136,30 @@ export default function StatsScreen() {
     ]);
   };
 
+  // 这笔总时长落在所选区间的起点那天（本周→周一 / 本月→1号 / 本年→1月1日），
+  // 这样它计入该周/月/年合计，又不会全堆到"今天"。
+  const periodAnchor = (p) => {
+    const now = new Date();
+    if (p === 'week') { const day = now.getDay() || 7; const mon = new Date(now); mon.setDate(now.getDate() - day + 1); return mon; }
+    if (p === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
+    return new Date(now.getFullYear(), 0, 1); // year
+  };
+  const PERIOD_LABELS = { week: '本周', month: '本月', year: '本年' };
+
   const saveManual = async () => {
     const min = parseInt(manualMin) || 0;
     if (min <= 0) { Alert.alert('请输入分钟数'); return; }
-    await addManualSession(manualSubject, manualSign * min * 60);
+    await addManualSession(manualSubject, manualSign * min * 60, localDate(periodAnchor(manualPeriod)));
     setShowManual(false);
     setManualMin('30');
     setManualSign(1);
+    setManualPeriod('month');
     loadAll();
   };
+
+  // 分钟数友好提示（几十小时时显示约几小时）
+  const manualMinNum = parseInt(manualMin) || 0;
+  const manualHourHint = manualMinNum >= 60 ? `（约 ${Math.floor(manualMinNum / 60)} 小时${manualMinNum % 60 ? ' ' + (manualMinNum % 60) + ' 分' : ''}）` : '';
 
   const periodLabel = PERIODS.find(p => p.key === period)?.label || '';
 
@@ -253,6 +269,18 @@ export default function StatsScreen() {
               ))}
             </View>
 
+            {/* 算进哪个区间（不堆到今天） */}
+            <Text style={styles.mLbl}>算进</Text>
+            <View style={styles.signRow}>
+              {['week', 'month', 'year'].map(p => (
+                <TouchableOpacity key={p}
+                  style={[styles.signTab, manualPeriod === p && styles.periodTabSel]}
+                  onPress={() => setManualPeriod(p)}>
+                  <Text style={[styles.signTabText, manualPeriod === p && { color: '#fff' }]}>{PERIOD_LABELS[p]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* 科目 */}
             <Text style={styles.mLbl}>科目</Text>
             <View style={styles.subjGrid}>
@@ -267,19 +295,19 @@ export default function StatsScreen() {
               ))}
             </View>
 
-            {/* 分钟数 */}
-            <Text style={styles.mLbl}>分钟数</Text>
+            {/* 分钟数（补一段时间的总时长，支持几十小时） */}
+            <Text style={styles.mLbl}>分钟数 {manualHourHint}</Text>
             <View style={styles.minRow}>
+              <TouchableOpacity onPress={() => setManualMin(p => String(Math.max(1, (parseInt(p) || 0) - 60)))}><Text style={styles.minBtn}>−60</Text></TouchableOpacity>
               <TouchableOpacity onPress={() => setManualMin(p => String(Math.max(1, (parseInt(p) || 0) - 10)))}><Text style={styles.minBtn}>−10</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setManualMin(p => String(Math.max(1, (parseInt(p) || 0) - 5)))}><Text style={styles.minBtn}>−5</Text></TouchableOpacity>
               <TextInput style={styles.minInput} keyboardType="numeric" value={manualMin} onChangeText={setManualMin} />
-              <TouchableOpacity onPress={() => setManualMin(p => String((parseInt(p) || 0) + 5))}><Text style={styles.minBtn}>+5</Text></TouchableOpacity>
               <TouchableOpacity onPress={() => setManualMin(p => String((parseInt(p) || 0) + 10))}><Text style={styles.minBtn}>+10</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setManualMin(p => String((parseInt(p) || 0) + 60))}><Text style={styles.minBtn}>+60</Text></TouchableOpacity>
             </View>
 
             <Text style={styles.mHint}>
-              {manualSign === 1 ? '将给今天的' : '将从今天的'}「{SUBJECTS[manualSubject]?.name}」
-              {manualSign === 1 ? '增加 ' : '扣减 '}{parseInt(manualMin) || 0} 分钟
+              {manualSign === 1 ? '将把 ' : '将从 '}{PERIOD_LABELS[manualPeriod]}「{SUBJECTS[manualSubject]?.name}」
+              {manualSign === 1 ? '合计增加 ' : '合计扣减 '}{manualMinNum} 分钟{manualHourHint}
             </Text>
 
             <TouchableOpacity style={[styles.saveManual, manualSign === -1 && { backgroundColor: COLORS.lock }]} onPress={saveManual}>
@@ -360,6 +388,7 @@ const styles = StyleSheet.create({
   signTabSub: { backgroundColor: COLORS.lock },
   signTabText: { fontSize: 14, fontWeight: '700', color: COLORS.text2 },
   mLbl: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 8 },
+  periodTabSel: { backgroundColor: COLORS.accent },
   subjGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   subjChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: COLORS.card2, borderWidth: 1.5, borderColor: 'transparent' },
   subjChipText: { fontSize: 13, color: COLORS.text2 },

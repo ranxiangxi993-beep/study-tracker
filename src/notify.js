@@ -4,6 +4,19 @@ import * as Notifications from 'expo-notifications';
 import { SUBJECTS } from './constants';
 import { showDynamicIsland } from './nativeLock';
 
+// 打开"本应用的通知设置"页（用于让用户开启横幅/悬浮/锁屏通知——
+// 国产 ROM 默认关着，App 无法代为打开，只能引导用户手动开）。
+let IntentLauncher;
+try { IntentLauncher = require('expo-intent-launcher'); } catch (_) {}
+export async function openNotificationSettings() {
+  if (Platform.OS !== 'android' || !IntentLauncher?.startActivityAsync) return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS', {
+      extra: { 'android.provider.extra.APP_PACKAGE': 'com.kaoyan.studytimer' },
+    });
+  } catch (_) {}
+}
+
 // ============================================================================
 // 为什么 v13 离开界面就收不到提醒？
 // 旧实现靠 JS 的 setInterval(每 30s 扫一遍日程) + 悬浮窗(DynamicIsland)。
@@ -38,9 +51,12 @@ export async function ensureNotifPermission() {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
         name: '学习提醒',
-        importance: Notifications.AndroidImportance.HIGH,
+        // MAX = 安卓"紧急/横幅"级别，才会像微信那样以悬浮横幅弹出（HIGH 在部分 ROM 只进通知栏）
+        importance: Notifications.AndroidImportance.MAX,
         sound: 'default',
         vibrationPattern: [0, 250, 250, 250],
+        enableVibrate: true,
+        bypassDnd: true, // 勿扰模式下也提醒
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }
@@ -74,6 +90,8 @@ export async function scheduleTimerEnd(seconds, isWork, subjectName) {
         title: isWork ? '🎉 学习完成！' : '⏰ 休息结束',
         body: isWork ? `${subjectName || '本轮'} 计时到啦，继续加油` : '该回去学习了',
         sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX, // 触发悬浮横幅
+        vibrationPattern: [0, 250, 250, 250],
       },
       trigger: {
         type: 'timeInterval', // SchedulableTriggerInputTypes.TIME_INTERVAL
@@ -101,7 +119,11 @@ function shiftTime(hh, mm, deltaMin) {
 async function scheduleDaily(hour, minute, title, body) {
   try {
     return await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: 'default' },
+      content: {
+        title, body, sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX, // 触发悬浮横幅
+        vibrationPattern: [0, 250, 250, 250],
+      },
       trigger: {
         type: 'daily', // SchedulableTriggerInputTypes.DAILY
         hour,

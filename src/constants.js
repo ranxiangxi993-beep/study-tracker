@@ -27,4 +27,4 @@ export const COLORS = {
 export const DEFAULT_GOAL_MINUTES = 120; // 每科默认2小时
 
 // 自更新版本号 — 每次要推送更新时与 app.json 的 android.versionCode 同步递增
-export const APP_VERSION_CODE = 17;
+export const APP_VERSION_CODE = 18;
