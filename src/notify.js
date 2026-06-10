@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { SUBJECTS } from './constants';
 import { showDynamicIsland } from './nativeLock';
+
+// 原生精确闹钟模块（setAlarmClock）：用于"计时结束"提醒，绕过 Doze/省电冻结
+const TimerAlarm = NativeModules.TimerAlarm;
 
 // 打开"本应用的通知设置"页（用于让用户开启横幅/悬浮/锁屏通知——
 // 国产 ROM 默认关着，App 无法代为打开，只能引导用户手动开）。
@@ -88,24 +91,32 @@ export async function remindBreak() {
   showDynamicIsland('☕ 休息一下', '站起来走动');
 }
 
-// ====== 番茄钟：预约"计时结束"通知（后台/锁屏也会响） ======
-// 在开始计时时调用；返回通知 id，暂停/结束/切换时用 cancelScheduled 取消。
+// ====== 番茄钟：预约"计时结束"通知（后台/锁屏/息屏也会准时响） ======
+// 在开始计时时调用；返回一个 id，暂停/结束/切换时用 cancelScheduled 取消。
+//
+// ⚠️ 为什么不用 expo 的 timeInterval 触发器？
+// expo-notifications 的定时通知在安卓 Doze（息屏静止）下会被系统推迟，直到设备唤醒
+// （解锁/回 App）才一次性补发——这就是"息屏收不到、回 App 过一会才弹"的真因
+// （见 expo/expo#10456）。改用原生 AlarmManager.setAlarmClock：它是最高优先级闹钟，
+// 绕过 Doze/省电/后台冻结，息屏也精确触发。原生不可用时（如 Expo Go）回退到 expo。
 export async function scheduleTimerEnd(seconds, isWork, subjectName) {
   if (seconds <= 0) return null;
+  const title = isWork ? '🎉 学习完成！' : '⏰ 休息结束';
+  const body = isWork ? `${subjectName || '本轮'} 计时到啦，继续加油` : '该回去学习了';
+
+  if (TimerAlarm?.schedule) {
+    try { await TimerAlarm.schedule(Math.round(seconds), title, body); return 'native-timer'; }
+    catch (_) { /* 落到 expo 回退 */ }
+  }
+  // 回退：expo 定时通知（Doze 下可能延迟，但聊胜于无）
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
-        title: isWork ? '🎉 学习完成！' : '⏰ 休息结束',
-        body: isWork ? `${subjectName || '本轮'} 计时到啦，继续加油` : '该回去学习了',
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.MAX, // 触发悬浮横幅
+        title, body, sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
         vibrationPattern: [0, 250, 250, 250],
       },
-      trigger: {
-        type: 'timeInterval', // SchedulableTriggerInputTypes.TIME_INTERVAL
-        seconds: Math.round(seconds),
-        channelId: CHANNEL_ID,
-      },
+      trigger: { type: 'timeInterval', seconds: Math.round(seconds), channelId: CHANNEL_ID },
     });
   } catch (_) {
     return null;
@@ -114,6 +125,7 @@ export async function scheduleTimerEnd(seconds, isWork, subjectName) {
 
 export async function cancelScheduled(id) {
   if (!id) return;
+  if (id === 'native-timer') { try { await TimerAlarm?.cancel?.(); } catch (_) {} return; }
   try { await Notifications.cancelScheduledNotificationAsync(id); } catch (_) {}
 }
 

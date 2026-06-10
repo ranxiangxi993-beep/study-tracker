@@ -83,7 +83,7 @@ export default function TimerScreen({ navigation }) {
     notifIdRef.current = null;
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
-    if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; }
+    if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
   }, [mode, customMin, countUp]);
@@ -119,7 +119,7 @@ export default function TimerScreen({ navigation }) {
   const doStop = useCallback(async () => {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     cancelScheduled(notifIdRef.current); notifIdRef.current = null;
-    if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
+    if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); getStreak().then(setStreak); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
   }, [mode, sessionId, customMin, countUp]);

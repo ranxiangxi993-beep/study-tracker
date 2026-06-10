@@ -31,6 +31,9 @@
       android:foregroundServiceType="specialUse"
       android:exported="false"/>
 
+    <!-- 计时结束的精确闹钟接收器（setAlarmClock 唤醒它贴通知，息屏/后台也准时） -->
+    <receiver android:name=".lock.TimerAlarmReceiver" android:exported="false"/>
+
     <service
       android:name=".lock.StudyAccessibilityService"
       android:label="研途专注"

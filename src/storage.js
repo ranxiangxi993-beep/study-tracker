@@ -226,18 +226,17 @@ export async function getPeriodStats(period) {
 
 export async function getStreak() {
   const sessions = await getSessions();
-  let streak = 0;
+  const studied = (dateStr) => sessions.some(s => s.date === dateStr && s.duration > 0);
   const today = new Date();
-  for (let i = 0; i < 365; i++) {
+  // 今天还没学时，连续天数不清零——从昨天往前数（今天只是还没续上，不算断）。
+  // 否则每天零点一过、在今天学习之前，火花都会先掉到 0，体验很挫。
+  const start = studied(localDate(today)) ? 0 : 1;
+  let streak = 0;
+  for (let i = start; i < 365 + start; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = localDate(d);
-    if (sessions.some(s => s.date === dateStr && s.duration > 0)) {
-      streak = i + 1;
-    } else {
-      if (i === 0) streak = 0;
-      break;
-    }
+    if (studied(localDate(d))) streak++;
+    else break;
   }
   return streak;
 }
