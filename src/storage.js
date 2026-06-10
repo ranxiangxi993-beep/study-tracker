@@ -75,6 +75,20 @@ export async function clearManualSessions() {
   return removed;
 }
 
+// 编辑一条记录的时长（分钟级补正/修改）。seconds 为新的总秒数（>0）。
+// 同步修正 end_time 以保持 start/end 一致，柱状图/饼图随之更新。
+export async function updateSessionDuration(id, seconds) {
+  const sessions = await getSessions();
+  const idx = sessions.findIndex(s => s.id === id);
+  if (idx === -1) return null;
+  const s = sessions[idx];
+  s.duration = Math.max(0, Math.round(seconds));
+  if (s.start_time) s.end_time = new Date(new Date(s.start_time).getTime() + s.duration * 1000).toISOString();
+  sessions[idx] = s;
+  await saveSessions(sessions);
+  return s;
+}
+
 // Get active (unfinished) session
 export async function getActiveSession() {
   const sessions = await getSessions();
@@ -113,8 +127,9 @@ export async function getWeekStats() {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     const dateStr = localDate(d);
-    // 柱状图只反映真实计时，不含手动补录（手动补录只进区间合计/饼图）
-    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0 && !s.manual);
+    // 柱状图反映这一天的全部时长（含手动补录）——手动补录本周时可指定具体某天，
+    // 落到那天就该在柱状图上体现出来（与"区间合计/饼图"保持一致）。
+    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0);
     const bySubject = {};
     let total = 0;
     daySessions.forEach(s => {
@@ -154,9 +169,9 @@ export async function getYearlyHeatmap(year) {
     days[key] = 0;
   }
 
-  // Sum durations per day（热力图同样只反映真实计时，不含手动补录）
+  // Sum durations per day（含手动补录，使日历/热力图与区间合计一致）
   sessions.forEach(s => {
-    if (s.duration !== 0 && !s.manual && days[s.date] !== undefined) {
+    if (s.duration !== 0 && days[s.date] !== undefined) {
       days[s.date] += s.duration;
     }
   });

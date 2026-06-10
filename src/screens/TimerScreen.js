@@ -51,6 +51,11 @@ export default function TimerScreen({ navigation }) {
   const startTimeRef = useRef(null);
   const pausedMsRef = useRef(0);
   const notifIdRef = useRef(null); // 预约的"计时结束"系统通知 id
+  // sessionId 的镜像 ref：倒计时自然结束时，finish 是被 setInterval 里"旧的" updateDisplay
+  // 闭包调用的，闭包里的 sessionId 可能还是启动前的 null（异步 setState 的经典陷阱），
+  // 导致 stopSession 拿不到 id、时长记不进去。改成从 ref 读最新 id。
+  const sessionIdRef = useRef(null);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   const getElapsed = useCallback(() => {
     if (!startTimeRef.current) return 0;
@@ -72,22 +77,22 @@ export default function TimerScreen({ navigation }) {
 
   const finish = useCallback(async () => {
     Vibration.vibrate([500, 200, 500, 200, 800]);
-    cancelScheduled(notifIdRef.current); notifIdRef.current = null; // 前台已触发，撤掉系统通知免重复
+    // 不再取消预约的系统通知——让它像「日程提醒」那样，到点由系统弹出悬浮横幅，
+    // 并在锁屏/息屏时也显示（前台 setNotificationHandler 也会弹横幅）。这样无论 App
+    // 在前台、后台还是息屏，倒计时结束都有一致的"微信式"提醒，不用一直盯着界面。
+    notifIdRef.current = null;
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-    const actual = getElapsed();
-    if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); }
+    const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
+    if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
-    if (mode === 'work') celebrateComplete(SUBJECTS[activeSubject]?.name, formatDuration(actual));
-    else remindBreak();
-    Alert.alert(mode === 'work' ? '🎉 学习完成！' : '⏰ 休息结束', '继续加油', [{ text: '好的' }]);
-  }, [mode, sessionId, activeSubject, customMin, countUp, getElapsed]);
+  }, [mode, customMin, countUp]);
 
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
     const elapsedAtStart = isPaused ? pausedMsRef.current : 0;
     if (!isPaused) {
-      if (mode === 'work') setSessionId(await startSession(activeSubject));
+      if (mode === 'work') { const id = await startSession(activeSubject); setSessionId(id); sessionIdRef.current = id; }
       startTimeRef.current = Date.now();
     } else {
       startTimeRef.current = Date.now() - pausedMsRef.current * 1000;
@@ -327,12 +332,15 @@ export default function TimerScreen({ navigation }) {
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
-        <Pressable style={styles.overlay} onPress={() => setShowSettings(false)}>
-          <Pressable style={styles.sheet} onPress={() => {}}>
+        <View style={styles.overlay}>
+          {/* 只有顶部空白区点击才关闭；面板本身是普通 View，不再用 Pressable 包裹，
+              否则 Pressable 会抢走滑动手势，导致"空白处滑不动/不丝滑"。 */}
+          <Pressable style={{ flex: 1 }} onPress={() => setShowSettings(false)} />
+          <View style={styles.sheet}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>⚙️ 设置</Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
             <Text style={styles.lbl}>⏱️ 时长（分钟）</Text>
             {[{ k: 'work', lab: '📖', name: '学习', f: 'work' },{ k: 'short', lab: '☕', name: '短休', f: 'short' },{ k: 'long', lab: '😴', name: '长休', f: 'long' }].map(item => (
               <View key={item.k} style={styles.dr}>
@@ -386,8 +394,8 @@ export default function TimerScreen({ navigation }) {
             <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 14 }} onPress={() => setShowSettings(false)}><Text style={{ color: COLORS.text2 }}>关闭</Text></TouchableOpacity>
             <Text style={{ color: COLORS.text2, textAlign: 'center', fontSize: 11, opacity: 0.6, paddingBottom: 8 }}>研途 · 版本 v{APP_VERSION_CODE}</Text>
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* Whitelist Modal */}

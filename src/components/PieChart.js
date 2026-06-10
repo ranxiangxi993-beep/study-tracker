@@ -4,15 +4,16 @@ import Svg, { Path, Line, Text as SvgText, G } from 'react-native-svg';
 import { SUBJECTS, COLORS } from '../constants';
 import { formatDuration } from '../storage';
 
-// viewBox 比绘图区更宽，给左右标签留出文字空间（避免引出线标签出屏被裁切）
-const VB_W = 460;
+// viewBox 比绘图区更宽，给左右标签留出文字空间（避免引出线标签出屏被裁切）。
+// 标签字号调大了，所以把 viewBox 再加宽并缩短引出线，确保文字仍落在框内不出屏。
+const VB_W = 500;
 const VB_H = 300;
-const CX = VB_W / 2;   // 230
+const CX = VB_W / 2;   // 250
 const CY = VB_H / 2;   // 150
 const OUTER_R = 88;
 const INNER_R = 56;    // donut hole
-const LABEL_LINE = 22; // 引出线斜段长度（加长，标签离环更远更舒展）
-const LABEL_EXT = 34;  // 引出线水平段长度（加长）
+const LABEL_LINE = 20; // 引出线斜段长度
+const LABEL_EXT = 28;  // 引出线水平段长度
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -88,7 +89,7 @@ export default function PieChart({ data, totalSec }) {
 
   return (
     <View style={styles.container}>
-      <Svg width={340} height={222} viewBox={`0 0 ${VB_W} ${VB_H}`}>
+      <Svg width={390} height={234} viewBox={`0 0 ${VB_W} ${VB_H}`}>
         {/* Slices */}
         {slices.map(slice => (
           <Path
@@ -123,15 +124,15 @@ export default function PieChart({ data, totalSec }) {
                 fill={slice.color}
               />
               <SvgText
-                x={textX} y={pts.labelY - 5}
-                fill={COLORS.text} fontSize="12" fontWeight="600"
+                x={textX} y={pts.labelY - 6}
+                fill={COLORS.text} fontSize="16" fontWeight="700"
                 textAnchor={pts.textAnchor}
               >
                 {slice.icon} {slice.name}
               </SvgText>
               <SvgText
-                x={textX} y={pts.labelY + 9}
-                fill={COLORS.text2} fontSize="10"
+                x={textX} y={pts.labelY + 11}
+                fill={COLORS.text2} fontSize="13"
                 textAnchor={pts.textAnchor}
               >
                 {formatDuration(slice.seconds)} · {slice.pct}%
@@ -143,14 +144,14 @@ export default function PieChart({ data, totalSec }) {
         {/* Center total */}
         <SvgText
           x={CX} y={CY - 5}
-          fill={COLORS.text} fontSize="17" fontWeight="700"
+          fill={COLORS.text} fontSize="19" fontWeight="700"
           textAnchor="middle"
         >
           {formatDuration(totalSec)}
         </SvgText>
         <SvgText
-          x={CX} y={CY + 13}
-          fill={COLORS.text2} fontSize="11"
+          x={CX} y={CY + 14}
+          fill={COLORS.text2} fontSize="12"
           textAnchor="middle"
         >
           总计

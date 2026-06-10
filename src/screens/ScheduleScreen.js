@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
 import { syncPlanNotifications } from '../notify';
@@ -12,12 +13,23 @@ export default function ScheduleScreen() {
   const [plan, setPlan] = useState([]);
   const [showEditor, setShowEditor] = useState(false);
   const [editing, setEditing] = useState(null);
+  // 用 tick 每分钟（及每次进入页面）强制重渲染，让"现在/已过"高亮跟着时间走，
+  // 否则 isNow/isPast 是在 render 时算的，时间过了也不刷新（之前要重启 App 才更新）。
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(data => {
       if (data) setPlan(JSON.parse(data));
     });
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setTick(t => t + 1);
+      const id = setInterval(() => setTick(t => t + 1), 30000);
+      return () => clearInterval(id);
+    }, [])
+  );
 
   const savePlan = async (newPlan) => {
     setPlan(newPlan);

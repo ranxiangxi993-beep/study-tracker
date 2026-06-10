@@ -12,7 +12,7 @@ import {
   getPeriodStats, getHistory, getHistoryCount,
   getHistoryInRange, getHistoryCountInRange,
   deleteSession, addManualSession, clearManualSessions, formatDuration, getWeekStats,
-  getYearlyHeatmap, getStatsInRange, localDate,
+  getYearlyHeatmap, getStatsInRange, localDate, updateSessionDuration,
 } from '../storage';
 
 // Month calendar grid
@@ -63,6 +63,20 @@ function getWeekRange() {
   return { start: localDate(monday), end: localDate(now) };
 }
 
+// 本周 周一~周日 的 7 个具体日期（用于"本周手动补录"选择落在哪一天）
+function getWeekDays() {
+  const now = new Date();
+  const day = now.getDay() || 7;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - day + 1);
+  const wk = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    return { date: localDate(d), label: wk[i], md: `${d.getMonth() + 1}/${d.getDate()}` };
+  });
+}
+
 export default function StatsScreen() {
   const { bgUri } = useBg();
   const [period, setPeriod] = useState('week');
@@ -82,6 +96,11 @@ export default function StatsScreen() {
   const [manualMin, setManualMin] = useState('30');
   const [manualSign, setManualSign] = useState(1); // 1 = 增加, -1 = 扣减
   const [manualPeriod, setManualPeriod] = useState('month'); // 这笔总时长算进哪个区间
+  const [manualWeekDay, setManualWeekDay] = useState(localDate()); // 选"本周"时，具体落在哪一天
+
+  // 编辑某条记录的时长
+  const [editSession, setEditSession] = useState(null); // 正在编辑的 session
+  const [editMin, setEditMin] = useState('0');
 
   useFocusEffect(
     useCallback(() => {
@@ -158,11 +177,24 @@ export default function StatsScreen() {
       if (have <= 0) { Alert.alert('无可扣减', `${PERIOD_LABELS[manualPeriod]}「${SUBJECTS[manualSubject]?.name}」暂无可扣减的时长`); return; }
       secs = -Math.min(secs, have);
     }
-    await addManualSession(manualSubject, secs, localDate(periodAnchor(manualPeriod)));
+    // 选"本周"时落到用户指定的那一天（其余区间落到区间起点：1号 / 1月1日）
+    const targetDate = manualPeriod === 'week' ? manualWeekDay : localDate(periodAnchor(manualPeriod));
+    await addManualSession(manualSubject, secs, targetDate);
     setShowManual(false);
     setManualMin('30');
     setManualSign(1);
     setManualPeriod('month');
+    setManualWeekDay(localDate());
+    loadAll();
+  };
+
+  // 保存对某条记录时长的编辑
+  const saveEdit = async () => {
+    if (!editSession) return;
+    const min = parseInt(editMin);
+    if (isNaN(min) || min < 0) { Alert.alert('请输入分钟数'); return; }
+    await updateSessionDuration(editSession.id, min * 60);
+    setEditSession(null);
     loadAll();
   };
 
@@ -178,6 +210,7 @@ export default function StatsScreen() {
   const manualHourHint = manualMinNum >= 60 ? `（约 ${Math.floor(manualMinNum / 60)} 小时${manualMinNum % 60 ? ' ' + (manualMinNum % 60) + ' 分' : ''}）` : '';
 
   const periodLabel = PERIODS.find(p => p.key === period)?.label || '';
+  const weekDays = getWeekDays();
 
   // Week bar chart data (only show for day/week period)
   const maxWeekSec = Math.max(1, ...weekData.map(d => d.total_sec));
@@ -264,6 +297,42 @@ export default function StatsScreen() {
           </View>
         ) : null}
 
+        {/* 本周学习记录（可编辑时长 / 删除，改动后柱状图、饼图同步刷新） */}
+        <View style={styles.historySection}>
+          <Text style={styles.sectionTitle}>📝 本周记录</Text>
+          {sessions.length === 0 ? (
+            <View style={styles.empty}><Text style={styles.emptyText}>本周还没有记录</Text></View>
+          ) : (
+            sessions.map(s => {
+              const subj = SUBJECTS[s.subject] || { icon: '📝', name: s.subject || '记录', color: COLORS.accent };
+              const t = new Date(s.start_time);
+              const hh = String(t.getHours()).padStart(2, '0');
+              const mm = String(t.getMinutes()).padStart(2, '0');
+              return (
+                <View key={s.id} style={styles.historyItem}>
+                  <View style={[styles.historyDot, { backgroundColor: subj.color }]} />
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historySubj}>{subj.icon} {subj.name}{s.manual ? ' · 手动' : ''}</Text>
+                    <Text style={styles.historyMeta}>{s.date.slice(5)} {hh}:{mm}</Text>
+                  </View>
+                  <Text style={[styles.historyDur, s.duration < 0 && { color: COLORS.lock }]}>{formatDuration(s.duration)}</Text>
+                  <TouchableOpacity onPress={() => { setEditSession(s); setEditMin(String(Math.max(0, Math.round(s.duration / 60)))); }}>
+                    <Text style={styles.editIconH}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDelete(s.id)}>
+                    <Text style={styles.delBtn}>🗑</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
+          {sessions.length < sessionsTotal && (
+            <TouchableOpacity style={styles.loadMore} onPress={loadMoreHistory}>
+              <Text style={styles.loadMoreText}>加载更多（{sessions.length}/{sessionsTotal}）</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -297,6 +366,23 @@ export default function StatsScreen() {
               ))}
             </View>
 
+            {/* 选"本周"时，可精确到本周的某一天（落到该天，柱状图也会体现） */}
+            {manualPeriod === 'week' && (
+              <>
+                <Text style={styles.mLbl}>具体哪一天</Text>
+                <View style={styles.weekDayRow}>
+                  {weekDays.map(d => (
+                    <TouchableOpacity key={d.date}
+                      style={[styles.weekDayChip, manualWeekDay === d.date && styles.weekDayChipSel]}
+                      onPress={() => setManualWeekDay(d.date)}>
+                      <Text style={[styles.weekDayLab, manualWeekDay === d.date && { color: '#fff' }]}>{d.label}</Text>
+                      <Text style={[styles.weekDayMd, manualWeekDay === d.date && { color: '#fff' }]}>{d.md}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
             {/* 科目 */}
             <Text style={styles.mLbl}>科目</Text>
             <View style={styles.subjGrid}>
@@ -324,7 +410,9 @@ export default function StatsScreen() {
             <Text style={styles.mHint}>
               {manualSign === 1 ? '将把 ' : '将从 '}{PERIOD_LABELS[manualPeriod]}「{SUBJECTS[manualSubject]?.name}」
               {manualSign === 1 ? '合计增加 ' : '合计扣减 '}{manualMinNum} 分钟{manualHourHint}
-              {'\n'}（仅计入合计与饼图，不影响每日柱状图/热力图）
+              {'\n'}{manualPeriod === 'week'
+                ? '（落在所选那天，柱状图、饼图与合计都会更新）'
+                : '（落在区间起点那天，饼图与合计都会更新）'}
             </Text>
 
             <TouchableOpacity style={[styles.saveManual, manualSign === -1 && { backgroundColor: COLORS.lock }]} onPress={saveManual}>
@@ -340,6 +428,39 @@ export default function StatsScreen() {
             </View>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* 编辑某条记录的时长 */}
+      <Modal visible={!!editSession} animationType="fade" transparent onRequestClose={() => setEditSession(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={{ flex: 1 }} onPress={() => setEditSession(null)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetT}>✏️ 编辑时长</Text>
+            {editSession && (
+              <Text style={styles.mLbl}>
+                {(SUBJECTS[editSession.subject]?.name) || '记录'} · {editSession.date}
+              </Text>
+            )}
+            <View style={styles.minRow}>
+              <TouchableOpacity onPress={() => setEditMin(p => String(Math.max(0, (parseInt(p) || 0) - 10)))}><Text style={styles.minBtn}>−10</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditMin(p => String(Math.max(0, (parseInt(p) || 0) - 1)))}><Text style={styles.minBtn}>−1</Text></TouchableOpacity>
+              <TextInput style={styles.minInput} keyboardType="numeric" value={editMin} onChangeText={setEditMin} />
+              <TouchableOpacity onPress={() => setEditMin(p => String((parseInt(p) || 0) + 1))}><Text style={styles.minBtn}>+1</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditMin(p => String((parseInt(p) || 0) + 10))}><Text style={styles.minBtn}>+10</Text></TouchableOpacity>
+            </View>
+            <Text style={styles.mHint}>改成 {parseInt(editMin) || 0} 分钟（柱状图、饼图会同步更新）</Text>
+            <TouchableOpacity style={styles.saveManual} onPress={saveEdit}><Text style={styles.saveManualText}>保存</Text></TouchableOpacity>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10 }}>
+              <TouchableOpacity style={{ paddingVertical: 6, paddingHorizontal: 4 }} onPress={() => setEditSession(null)}>
+                <Text style={{ color: COLORS.text2 }}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ paddingVertical: 6, paddingHorizontal: 4 }} onPress={() => { const id = editSession.id; setEditSession(null); handleDelete(id); }}>
+                <Text style={{ color: COLORS.lock, fontSize: 12 }}>🗑 删除这条</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -411,6 +532,12 @@ const styles = StyleSheet.create({
   signTabText: { fontSize: 14, fontWeight: '700', color: COLORS.text2 },
   mLbl: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 8 },
   periodTabSel: { backgroundColor: COLORS.accent },
+  weekDayRow: { flexDirection: 'row', gap: 4, marginBottom: 16 },
+  weekDayChip: { flex: 1, paddingVertical: 7, borderRadius: 9, alignItems: 'center', backgroundColor: COLORS.card2 },
+  weekDayChipSel: { backgroundColor: COLORS.accent },
+  weekDayLab: { fontSize: 11, fontWeight: '700', color: COLORS.text2 },
+  weekDayMd: { fontSize: 9, color: COLORS.text2, marginTop: 1 },
+  editIconH: { fontSize: 14, opacity: 0.5, paddingHorizontal: 2 },
   subjGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   subjChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: COLORS.card2, borderWidth: 1.5, borderColor: 'transparent' },
   subjChipText: { fontSize: 13, color: COLORS.text2 },
