@@ -12,7 +12,7 @@ import SubjectSelector from '../components/SubjectSelector';
 import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
-import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings } from '../notify';
+import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, startLiveTimer, stopLiveTimer } from '../notify';
 import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
@@ -81,6 +81,7 @@ export default function TimerScreen({ navigation }) {
     // 并在锁屏/息屏时也显示（前台 setNotificationHandler 也会弹横幅）。这样无论 App
     // 在前台、后台还是息屏，倒计时结束都有一致的"微信式"提醒，不用一直盯着界面。
     notifIdRef.current = null;
+    stopLiveTimer(); // 收起流体云实时胶囊（结束提醒由系统闹钟弹出）
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
     if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
@@ -105,6 +106,11 @@ export default function TimerScreen({ navigation }) {
     if (!countUp) {
       const remaining = modes[mode].minutes * 60 - elapsedAtStart;
       notifIdRef.current = await scheduleTimerEnd(remaining, mode === 'work', SUBJECTS[activeSubject]?.name);
+      // 流体云实时胶囊：倒计时进行中常驻显示剩余时间
+      const capsuleTitle = mode === 'work'
+        ? `📖 ${SUBJECTS[activeSubject]?.name || '学习'}`
+        : (mode === 'short' ? '☕ 短休' : '😴 长休');
+      startLiveTimer(remaining, capsuleTitle);
     }
     clearInterval(timerRef.current);
     timerRef.current = setInterval(updateDisplay, 200);
@@ -115,10 +121,12 @@ export default function TimerScreen({ navigation }) {
     setIsPaused(true); clearInterval(timerRef.current);
     pausedMsRef.current = getElapsed();
     cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    stopLiveTimer();
   }, [getElapsed]);
   const doStop = useCallback(async () => {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    stopLiveTimer();
     if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); getStreak().then(setStreak); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
@@ -127,6 +135,7 @@ export default function TimerScreen({ navigation }) {
   const switchMode = useCallback((m) => {
     if (isRunning) { clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
       cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+      stopLiveTimer();
       if (mode === 'work' && sessionId) { stopSession(sessionId); setSessionId(null); }
     }
     setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
@@ -139,6 +148,7 @@ export default function TimerScreen({ navigation }) {
         text: '确定', onPress: async () => {
           if (sessionId) { await stopSession(sessionId); setSessionId(null); }
           cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+          stopLiveTimer();
           clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
           setTimeLeft(countUp ? 0 : modes[mode].minutes * 60); setActiveSubject(key);
           startTimeRef.current = null;
@@ -175,6 +185,9 @@ export default function TimerScreen({ navigation }) {
 
   // Init
   useEffect(() => {
+    // 冷启动时清掉可能残留的流体云胶囊（上次进程被杀但服务还在）；
+    // 正在运行的计时不会触发这里（那种情况组件没重新挂载）。
+    stopLiveTimer();
     const refreshCd = () => {
       const target = new Date(2026, 11, 20, 9, 0, 0);
       const now = new Date();

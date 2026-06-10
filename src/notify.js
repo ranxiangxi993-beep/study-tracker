@@ -129,6 +129,18 @@ export async function cancelScheduled(id) {
   try { await Notifications.cancelScheduledNotificationAsync(id); } catch (_) {}
 }
 
+// ====== 流体云：计时进行中的实时胶囊（安卓16 Live Update） ======
+// 开始倒计时时调用，结束/暂停/切换时调用 stopLiveTimer 收起。仅原生(非Expo Go)生效。
+export async function startLiveTimer(seconds, title) {
+  if (seconds <= 0 || !TimerAlarm?.startLive) return;
+  try { await TimerAlarm.startLive(Math.round(seconds), title); } catch (_) {}
+}
+
+export async function stopLiveTimer() {
+  if (!TimerAlarm?.stopLive) return;
+  try { await TimerAlarm.stopLive(); } catch (_) {}
+}
+
 // ====== 日程提醒：用"每日重复"通知，无需 App 在前台 ======
 function shiftTime(hh, mm, deltaMin) {
   let total = hh * 60 + mm - deltaMin;

@@ -59,4 +59,21 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
             p.resolve(true)
         } catch (e: Exception) { p.resolve(false) }
     }
+
+    // ===== 流体云：计时进行中的 Live Update 实时胶囊 =====
+    @ReactMethod
+    fun startLive(seconds: Double, title: String, p: Promise) {
+        try {
+            val total = (seconds * 1000).toLong()
+            val endAt = System.currentTimeMillis() + total
+            LiveTimerService.start(reactApplicationContext, endAt, total, title)
+            p.resolve(true)
+        } catch (e: Exception) { p.reject("ERR", e.message) }
+    }
+
+    @ReactMethod
+    fun stopLive(p: Promise) {
+        try { LiveTimerService.stop(reactApplicationContext); p.resolve(true) }
+        catch (e: Exception) { p.resolve(false) }
+    }
 }

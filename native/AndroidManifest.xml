@@ -14,6 +14,8 @@
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+  <!-- 安卓16 Live Update（流体云胶囊）所需，非运行时权限 -->
+  <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.MAIN"/>
@@ -33,6 +35,12 @@
 
     <!-- 计时结束的精确闹钟接收器（setAlarmClock 唤醒它贴通知，息屏/后台也准时） -->
     <receiver android:name=".lock.TimerAlarmReceiver" android:exported="false"/>
+
+    <!-- 计时进行中的 Live Update 实时胶囊（流体云）前台服务 -->
+    <service
+      android:name=".lock.LiveTimerService"
+      android:foregroundServiceType="specialUse"
+      android:exported="false"/>
 
     <service
       android:name=".lock.StudyAccessibilityService"
