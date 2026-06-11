@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.kaoyan.studytimer",
-      "versionCode": 28,
+      "versionCode": 29,
       "adaptiveIcon": {
         "backgroundColor": "#0f0f1a",
         "foregroundImage": "./assets/android-icon-foreground.png",

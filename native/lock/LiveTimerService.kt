@@ -5,13 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 
 // 安卓16 Live Update（Promoted Ongoing 通知）：计时进行中常驻显示倒计时/进度。
 // ColorOS16 流体云遵循谷歌实时活动规范，会自动把这种"已晋升的常驻通知"渲染成胶囊，
@@ -42,13 +45,17 @@ class LiveTimerService : Service() {
     private var endAt = 0L
     private var total = 0L
     private var title = "专注中"
+    // 屏幕是否点亮。息屏(AOD)时 CPU 休眠、ticker 走不动，会留下一张冻结的卡；
+    // 因此息屏把通知设为 SECRET（AOD/息屏不显示），亮屏(锁屏)再设回 PUBLIC 正常显示并恢复每秒走。
+    private var screenOn = true
 
     private val ticker = object : Runnable {
         override fun run() {
             val remaining = endAt - System.currentTimeMillis()
             if (remaining <= 0) { stopSelf(); return }
-            // 每秒重发，刷新胶囊/锁屏上的剩余时间。ColorOS 的锁屏/AOD 不会自行走 chronometer，
+            // 每秒重发，刷新胶囊/锁屏上的剩余时间。ColorOS 的锁屏不会自行走 chronometer，
             // 只有重发通知显示才会更新——不重发就卡住不跳、且与真实结束时刻对不上。
+            // （仅在亮屏时跑；息屏时 CPU 睡、本就走不动，由 screenReceiver 停掉避免"闪两下"。）
             try {
                 (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
             } catch (_: Throwable) {}
@@ -56,11 +63,51 @@ class LiveTimerService : Service() {
         }
     }
 
+    // 监听屏幕开关：息屏隐藏(SECRET)+停 ticker，亮屏显示(PUBLIC)+恢复每秒走
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            when (i?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    screenOn = false
+                    handler.removeCallbacks(ticker)   // 息屏 ticker 本就走不动，停掉避免最后两拍闪烁
+                    repost()                          // 以 SECRET 重发一次：AOD/息屏不再显示这张会冻结的卡
+                }
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                    if (screenOn) return
+                    screenOn = true
+                    repost()                          // 以 PUBLIC 重发：锁屏立刻显示当前剩余
+                    handler.removeCallbacks(ticker)
+                    handler.postDelayed(ticker, 200)  // 屏亮 CPU 醒，恢复每秒跳
+                }
+            }
+        }
+    }
+
+    private fun repost() {
+        val remaining = endAt - System.currentTimeMillis()
+        if (remaining <= 0) { stopSelf(); return }
+        try {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
+        } catch (_: Throwable) {}
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        val f = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        // 屏幕开关广播是受保护的隐式广播，只能运行时 registerReceiver（不能写在 manifest）
+        registerReceiver(screenReceiver, f)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         endAt = intent?.getLongExtra("endAt", 0L) ?: 0L
         total = intent?.getLongExtra("total", 0L) ?: 0L
         title = intent?.getStringExtra("title") ?: "专注中"
         createChannel()
+        screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         val remaining = (endAt - System.currentTimeMillis()).coerceAtLeast(0L)
         startForeground(NID, build(remaining))
         handler.removeCallbacks(ticker)
@@ -75,6 +122,7 @@ class LiveTimerService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
+        try { unregisterReceiver(screenReceiver) } catch (_: Throwable) {}
         try { (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NID) } catch (_: Throwable) {}
         super.onDestroy()
     }
@@ -101,6 +149,8 @@ class LiveTimerService : Service() {
             .setContentIntent(pi)
             .setWhen(endAt)
             .setShowWhen(false)
+            // 息屏(AOD)隐藏、亮屏(锁屏)正常显示：避免息屏留下一张冻结的卡
+            .setVisibility(if (screenOn) Notification.VISIBILITY_PUBLIC else Notification.VISIBILITY_SECRET)
             // 不用 chronometer：①系统自动走时是"分钟级"粗粒度，看着像卡住、和真实结束秒数对不上；
             // ②每秒重发时 chronometer 基准被重置会触发整张卡重新布局——这正是"整框一起跳"的主因。
             // 改为每秒重发、只更新 contentText/shortCriticalText 的 MM:SS 静态文本，让锁屏"原地换数字"。
