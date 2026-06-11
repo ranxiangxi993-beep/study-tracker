@@ -27,8 +27,9 @@ jobs:
       - run: npx expo prebuild --platform android
       # expo prebuild may omit a version for kotlin-gradle-plugin; pin to 2.1.20
       - run: sed -i "s|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')|classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20')|" android/build.gradle
-      - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml android/app/src/main/res/values
+      - run: mkdir -p android/app/src/main/java/com/kaoyan/studytimer/lock android/app/src/main/res/xml android/app/src/main/res/values android/app/src/main/res/drawable
       - run: cp native/lock/*.kt android/app/src/main/java/com/kaoyan/studytimer/lock/
+      - run: cp native/res/drawable/*.xml android/app/src/main/res/drawable/
       - run: cp native/res/xml/accessibility_service_config.xml android/app/src/main/res/xml/
       - run: cp native/res/xml/file_paths.xml android/app/src/main/res/xml/
       - run: cp native/res/device_admin_policies.xml android/app/src/main/res/xml/

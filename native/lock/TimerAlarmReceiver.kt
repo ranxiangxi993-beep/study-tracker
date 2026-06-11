@@ -8,6 +8,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 
 // 番茄钟/休息计时结束时由 AlarmManager 唤醒触发，直接贴出系统通知。
@@ -32,6 +36,35 @@ class TimerAlarmReceiver : BroadcastReceiver() {
             nm.createNotificationChannel(channel)
         }
 
+        // 息屏时主动点亮屏幕一下（来电式强提醒的一环）。JS 此时被冻结，靠这里唤醒。
+        runCatching {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "study:timerEnd"
+            )
+            wl.acquire(5000)
+        }
+
+        // 直接驱动振动器震动，不依赖通知渠道——国产 ROM 在息屏/Doze 下常吞掉后台通知的渠道震动，
+        // 显式 vibrate 才能保证息屏也震（之前震动只来自 JS finish()，回 App 才补震）。
+        runCatching {
+            val pattern = longArrayOf(0, 400, 250, 400, 250, 600)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vm.defaultVibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                val v = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION") v.vibrate(pattern, -1)
+                }
+            }
+        }
+
         // 点击通知打开 App
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()
         val contentPI = PendingIntent.getActivity(
@@ -39,17 +72,23 @@ class TimerAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // 单色矢量小图标，避免全彩 launcher 图在状态栏/锁屏被渲染成空白白块
+        val iconRes = context.resources.getIdentifier("ic_stat_timer", "drawable", context.packageName)
+            .let { if (it != 0) it else context.applicationInfo.icon }
+
         val builder = NotificationCompat.Builder(context, channelId)
             .setContentTitle(title)
             .setContentText(body)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(iconRes)
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVibrate(longArrayOf(0, 250, 250, 250))
+            .setCategory(NotificationCompat.CATEGORY_CALL) // 来电级：最易触发息屏亮屏 / ColorOS 边缘呼吸光
+            .setVibrate(longArrayOf(0, 400, 250, 400, 250, 600))
             .setDefaults(Notification.DEFAULT_SOUND)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(contentPI)
+            // 来电式全屏意图：息屏时像闹钟/来电一样点亮屏幕并强提醒（需 USE_FULL_SCREEN_INTENT 权限）
+            .setFullScreenIntent(contentPI, true)
 
         nm.notify(7001, builder.build())
     }

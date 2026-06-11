@@ -20,6 +20,20 @@ export async function openNotificationSettings() {
   } catch (_) {}
 }
 
+// 打开"全屏通知"特殊权限页（Android 14+）。来电式 setFullScreenIntent 在 14+ 默认会被
+// 系统降级为普通横幅，必须用户在此手动放行，息屏才会像闹钟/来电那样点亮屏幕强提醒。
+export async function openFullScreenIntentSettings() {
+  if (Platform.OS !== 'android' || !IntentLauncher?.startActivityAsync) return;
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT', {
+      data: 'package:com.kaoyan.studytimer',
+    });
+  } catch (_) {
+    // 低于 Android 14 没有这个页面，退回普通通知设置页
+    await openNotificationSettings();
+  }
+}
+
 // ============================================================================
 // 为什么 v13 离开界面就收不到提醒？
 // 旧实现靠 JS 的 setInterval(每 30s 扫一遍日程) + 悬浮窗(DynamicIsland)。

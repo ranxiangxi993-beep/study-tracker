@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Vibration, Alert, Platform, Modal, TextInput, Pressable,
+  Vibration, Alert, Platform, Modal, TextInput, Pressable, AppState,
 } from 'react-native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,7 +12,7 @@ import SubjectSelector from '../components/SubjectSelector';
 import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
-import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, startLiveTimer, stopLiveTimer } from '../notify';
+import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, openFullScreenIntentSettings, startLiveTimer, stopLiveTimer } from '../notify';
 import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
@@ -85,9 +85,29 @@ export default function TimerScreen({ navigation }) {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
     if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
-    setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
+    // 自然结束后统一回到「学习准备态」：休息结束自动切回 work 并把时长摆满，
+    // 这样息屏回来（由下方 AppState 对账补调 finish）状态自动归位，能直接按"开始学习"，
+    // 不会卡在"休息中…00:00"、也不会因 isRunning 残留 true 导致开始按钮失灵。
+    setMode('work');
+    setTimeLeft(countUp ? 0 : modes.work.minutes * 60);
+    setTotalTime(modes.work.minutes * 60);
     startTimeRef.current = null;
   }, [mode, customMin, countUp]);
+
+  // 息屏/Doze 下 JS 被冻结，驱动 finish 的 setInterval 不跑 → 倒计时到点也不会结算，
+  // 表现为"卡在休息 00:00、连开始学习都按不动"。这里在 App 回到前台时做一次对账：
+  // 若倒计时已过终点却还在 running，就补调 finish() 把状态归位。
+  const reconcileRef = useRef(() => {});
+  reconcileRef.current = () => {
+    if (isRunning && !isPaused && !countUp && startTimeRef.current) {
+      const remaining = modes[mode].minutes * 60 - getElapsed();
+      if (remaining <= 0) finish();
+    }
+  };
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') reconcileRef.current(); });
+    return () => sub.remove();
+  }, []);
 
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
@@ -395,6 +415,10 @@ export default function TimerScreen({ navigation }) {
             <Text style={[styles.lbl]}>🔔 提醒</Text>
             <TouchableOpacity style={styles.notifBtn} onPress={openNotificationSettings}>
               <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
+              <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.notifBtn, { marginTop: 8 }]} onPress={openFullScreenIntentSettings}>
+              <Text style={styles.notifBtnT}>允许全屏通知（息屏亮屏强提醒）</Text>
               <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
             </TouchableOpacity>
 
