@@ -64,7 +64,9 @@ class LiveTimerService : Service() {
         val remaining = (endAt - System.currentTimeMillis()).coerceAtLeast(0L)
         startForeground(NID, build(remaining))
         handler.removeCallbacks(ticker)
-        handler.postDelayed(ticker, 1000)
+        // 200ms 后就补发一次：部分 ROM(ColorOS/HyperOS) 要等到通知第一次"被更新"才把它
+        // 晋升成胶囊，等满 1 秒会让胶囊明显延迟出现（v24 的 15s 节流更是延迟到十几秒）。
+        handler.postDelayed(ticker, 200)
         // 被系统杀掉不自动重启（结束提醒由 TimerAlarm 的 setAlarmClock 负责，互不依赖）
         return START_NOT_STICKY
     }
