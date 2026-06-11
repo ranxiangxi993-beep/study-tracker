@@ -81,20 +81,23 @@ jobs:
           **版本号**: ${{ env.VERSION_CODE }}
           **提交**: ${{ github.sha }}"
           # 原地更新而非"删了重建"：避免 delete 残留 tag / delete→create 的 API 竞态
-          # 同时上传两份：固定名 app-release.apk（兼容旧版 App 的检查器）
-          # + 带版本号 app-release-v{N}.apk（新版 App 用，唯一 URL 绕开镜像缓存）
+          # gh 的 file#xxx 里 # 后是"标签"不是重命名，资产名永远取文件 basename。
+          # 故先 cp 出两个真实文件：固定名 app-release.apk（兼容旧版 App 检查器）
+          # + 带版本号 app-release-v{N}.apk（新版 App 用，唯一 URL 绕开镜像缓存）。
+          cp "${{ env.APK_PATH }}" app-release.apk
+          cp "${{ env.APK_PATH }}" "app-release-v${{ env.VERSION_CODE }}.apk"
           if gh release view latest-build >/dev/null 2>&1; then
             echo "latest-build 已存在 → 原地更新资产与说明（--clobber 覆盖同名文件）"
             gh release upload latest-build \
-              "${{ env.APK_PATH }}#app-release.apk" \
-              "${{ env.APK_PATH }}#app-release-v${{ env.VERSION_CODE }}.apk" \
+              app-release.apk \
+              "app-release-v${{ env.VERSION_CODE }}.apk" \
               version.json --clobber
             gh release edit latest-build --title "$TITLE" --notes "$NOTES"
           else
             echo "latest-build 不存在 → 新建"
             gh release create latest-build \
               --title "$TITLE" --notes "$NOTES" \
-              "${{ env.APK_PATH }}#app-release.apk" \
-              "${{ env.APK_PATH }}#app-release-v${{ env.VERSION_CODE }}.apk" \
+              app-release.apk \
+              "app-release-v${{ env.VERSION_CODE }}.apk" \
               version.json
           fi
