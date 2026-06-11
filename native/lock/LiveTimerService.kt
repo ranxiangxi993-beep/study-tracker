@@ -98,8 +98,10 @@ class LiveTimerService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
             .setWhen(endAt)
-            .setUsesChronometer(true)        // 系统自动渲染倒计时（API 17+ / countDown API 24+）
-            .setChronometerCountDown(true)
+            .setShowWhen(false)
+            // 不用 chronometer：①系统自动走时是"分钟级"粗粒度，看着像卡住、和真实结束秒数对不上；
+            // ②每秒重发时 chronometer 基准被重置会触发整张卡重新布局——这正是"整框一起跳"的主因。
+            // 改为每秒重发、只更新 contentText/shortCriticalText 的 MM:SS 静态文本，让锁屏"原地换数字"。
 
         // 请求"晋升为常驻实时通知"——仅是一个 Bundle 布尔位，无新方法，必定可编译。
         // 系统据此把它显示为状态栏胶囊；ColorOS 流体云同样读这套谷歌规范。
