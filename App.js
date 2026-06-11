@@ -35,11 +35,19 @@ const DL_MIRRORS = [
   u => u, // 直连兜底
 ];
 
+// 给 URL 追加时间戳，击穿镜像/CDN 缓存。
+// 真因：gh-proxy/ghproxy/ghfast 这些加速镜像会缓存 version.json / APK 的响应，
+// 构建发布后镜像仍吐几分钟前的旧缓存 → App 查到"版本相同"，等缓存过期才更新得到
+//（"推完立刻装版本相同、过一会才行"的根因）。带上唯一 query 让缓存键变化即绕过。
+function bust(url) {
+  return url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+}
+
 // 通过镜像逐个尝试 fetch，任一成功即返回 Response
 async function fetchViaMirror(url) {
   for (const wrap of DL_MIRRORS) {
     try {
-      const res = await fetch(wrap(url));
+      const res = await fetch(wrap(bust(url)), { cache: 'no-store' });
       if (res.ok) return res;
     } catch (_) {}
   }
@@ -72,7 +80,8 @@ async function downloadAndInstall(url) {
   let lastErr = '';
   for (const wrap of DL_MIRRORS) {
     try {
-      const { uri, status } = await FileSystem.downloadAsync(wrap(url), localUri);
+      // 同样击穿缓存，避免 version.json 已是新版但镜像把 APK 旧缓存吐给你 → 装上还是旧版
+      const { uri, status } = await FileSystem.downloadAsync(wrap(bust(url)), localUri);
       if (status >= 400) { lastErr = 'HTTP ' + status; continue; }
       const contentUri = await FileSystem.getContentUriAsync(uri);
       let IntentLauncher;
