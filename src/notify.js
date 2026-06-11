@@ -196,16 +196,11 @@ export async function syncPlanNotifications() {
 
     for (const s of plan) {
       const subjName = s.customName || SUBJECTS[s.subject]?.name || '课程';
+      // 只推"即将开始"，不再推"即将结束"（结束提醒太繁琐，用户嫌烦）
       if (s.start) {
         const [sh, sm] = s.start.split(':').map(Number);
         const t = shiftTime(sh, sm, 2); // 开始前 2 分钟
         const id = await scheduleDaily(t.hour, t.minute, '📅 即将开始', `${s.start} ${subjName}`);
-        if (id) newIds.push(id);
-      }
-      if (s.end) {
-        const [eh, em] = s.end.split(':').map(Number);
-        const t = shiftTime(eh, em, 2); // 结束前 2 分钟
-        const id = await scheduleDaily(t.hour, t.minute, '⏰ 即将结束', `${subjName} · ${s.end}`);
         if (id) newIds.push(id);
       }
     }
