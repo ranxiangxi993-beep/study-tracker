@@ -72,9 +72,9 @@ class TimerAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 单色矢量小图标，避免全彩 launcher 图在状态栏/锁屏被渲染成空白白块
-        val iconRes = context.resources.getIdentifier("ic_stat_timer", "drawable", context.packageName)
-            .let { if (it != 0) it else context.applicationInfo.icon }
+        // 单色小图标，避免全彩 launcher 图在状态栏/锁屏被渲染成空白白块。
+        // 直接引用 R.drawable：编译期解析，且不被 release 资源压缩器删除。
+        val iconRes = com.kaoyan.studytimer.R.drawable.ic_stat_timer
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setContentTitle(title)

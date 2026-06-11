@@ -26,10 +26,6 @@ class LiveTimerService : Service() {
     companion object {
         const val CHANNEL_ID = "study-live-timer"
         const val NID = 7100
-        // 进度条/胶囊短文案的刷新间隔。秒数本身交给系统 chronometer 自走，
-        // 所以这里不必每秒重发整条通知——每秒重发会让息屏/AOD 整框一秒一跳、
-        // 亮屏或下拉通知中心时把胶囊重新展开成卡片弹一下。降到 15s 刷一次即可。
-        const val REFRESH_MS = 15000L
         fun start(ctx: Context, endAt: Long, totalMs: Long, title: String) {
             val i = Intent(ctx, LiveTimerService::class.java).apply {
                 putExtra("endAt", endAt); putExtra("total", totalMs); putExtra("title", title)
@@ -46,21 +42,16 @@ class LiveTimerService : Service() {
     private var endAt = 0L
     private var total = 0L
     private var title = "专注中"
-    private var lastNotifyAt = 0L
 
     private val ticker = object : Runnable {
         override fun run() {
-            val now = System.currentTimeMillis()
-            val remaining = endAt - now
+            val remaining = endAt - System.currentTimeMillis()
             if (remaining <= 0) { stopSelf(); return }
-            // 每秒只检查是否到点收起；通知本体只每 REFRESH_MS 重发一次刷新进度条/短文案，
-            // 中间的秒数变化由通知里的 chronometer 由系统逐秒渲染（不重发 → 不闪不弹卡）。
-            if (now - lastNotifyAt >= REFRESH_MS) {
-                lastNotifyAt = now
-                try {
-                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
-                } catch (_: Throwable) {}
-            }
+            // 每秒重发，刷新胶囊/锁屏上的剩余时间。ColorOS 的锁屏/AOD 不会自行走 chronometer，
+            // 只有重发通知显示才会更新——不重发就卡住不跳、且与真实结束时刻对不上。
+            try {
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
+            } catch (_: Throwable) {}
             handler.postDelayed(this, 1000)
         }
     }
@@ -72,7 +63,6 @@ class LiveTimerService : Service() {
         createChannel()
         val remaining = (endAt - System.currentTimeMillis()).coerceAtLeast(0L)
         startForeground(NID, build(remaining))
-        lastNotifyAt = System.currentTimeMillis() // startForeground 刚发过一次，下次刷新等满 REFRESH_MS
         handler.removeCallbacks(ticker)
         handler.postDelayed(ticker, 1000)
         // 被系统杀掉不自动重启（结束提醒由 TimerAlarm 的 setAlarmClock 负责，互不依赖）
@@ -134,12 +124,10 @@ class LiveTimerService : Service() {
         return b.build()
     }
 
-    // 通知小图标用单色矢量剪影（ic_stat_timer）；绝不能用全彩 applicationInfo.icon——
-    // 状态栏/锁屏/胶囊只取 alpha 通道，全彩图会被画成空白白块。用 getIdentifier 取，缺失再兜底。
-    private fun smallIconRes(): Int {
-        val id = resources.getIdentifier("ic_stat_timer", "drawable", packageName)
-        return if (id != 0) id else applicationInfo.icon
-    }
+    // 通知小图标用单色剪影 ic_stat_timer；绝不能用全彩 applicationInfo.icon——状态栏/锁屏/胶囊
+    // 只取 alpha 通道，全彩图会被画成空白白块。直接引用 R.drawable（而非按名字 getIdentifier）：
+    // 编译期解析，且不会被 release 的资源压缩器当成"无引用"删掉（那正是上版图标仍空白的真因）。
+    private fun smallIconRes(): Int = com.kaoyan.studytimer.R.drawable.ic_stat_timer
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
