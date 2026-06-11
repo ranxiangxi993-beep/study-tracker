@@ -98,8 +98,14 @@ class LiveTimerService : Service() {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        // 屏幕开关广播是受保护的隐式广播，只能运行时 registerReceiver（不能写在 manifest）
-        registerReceiver(screenReceiver, f)
+        // 屏幕开关广播是受保护的隐式广播，只能运行时 registerReceiver（不能写在 manifest）。
+        // 安卓13+ 须显式声明导出标志，这里只收系统广播、不对外暴露 → RECEIVER_NOT_EXPORTED。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, f, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(screenReceiver, f)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

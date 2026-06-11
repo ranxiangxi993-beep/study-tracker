@@ -64,7 +64,9 @@ jobs:
       - name: Package release assets
         run: |
           VERSION_CODE=$(node -p "require('./app.json').expo.android.versionCode || 1")
-          echo "{\"versionCode\":$VERSION_CODE}" > version.json
+          # apk 字段带版本号文件名：每版唯一 URL，加速镜像里不存在该缓存，必定下到新包
+          # （旧的固定名 app-release.apk 会被镜像按路径缓存、忽略 ?t= 时间戳，导致下到旧包→"已安装相同版本"）
+          echo "{\"versionCode\":$VERSION_CODE,\"apk\":\"app-release-v$VERSION_CODE.apk\"}" > version.json
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
       - name: Publish GitHub Release
@@ -79,14 +81,20 @@ jobs:
           **版本号**: ${{ env.VERSION_CODE }}
           **提交**: ${{ github.sha }}"
           # 原地更新而非"删了重建"：避免 delete 残留 tag / delete→create 的 API 竞态
+          # 同时上传两份：固定名 app-release.apk（兼容旧版 App 的检查器）
+          # + 带版本号 app-release-v{N}.apk（新版 App 用，唯一 URL 绕开镜像缓存）
           if gh release view latest-build >/dev/null 2>&1; then
             echo "latest-build 已存在 → 原地更新资产与说明（--clobber 覆盖同名文件）"
             gh release upload latest-build \
-              "${{ env.APK_PATH }}#app-release.apk" version.json --clobber
+              "${{ env.APK_PATH }}#app-release.apk" \
+              "${{ env.APK_PATH }}#app-release-v${{ env.VERSION_CODE }}.apk" \
+              version.json --clobber
             gh release edit latest-build --title "$TITLE" --notes "$NOTES"
           else
             echo "latest-build 不存在 → 新建"
             gh release create latest-build \
               --title "$TITLE" --notes "$NOTES" \
-              "${{ env.APK_PATH }}#app-release.apk" version.json
+              "${{ env.APK_PATH }}#app-release.apk" \
+              "${{ env.APK_PATH }}#app-release-v${{ env.VERSION_CODE }}.apk" \
+              version.json
           fi
