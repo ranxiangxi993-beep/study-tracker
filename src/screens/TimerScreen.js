@@ -84,7 +84,8 @@ export default function TimerScreen({ navigation }) {
     stopLiveTimer(); // 收起流体云实时胶囊（结束提醒由系统闹钟弹出）
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
-    if (sid && mode === 'work') { await stopSession(sid); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
+    // 自然结束=跑满本模式时长；封顶避免"后台/息屏超时很久才对账结束"把多余时间算进去
+    if (sid && mode === 'work') { await stopSession(sid, Math.min(getElapsed(), modes[mode].minutes * 60)); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
     // 自然结束后统一回到「学习准备态」：休息结束自动切回 work 并把时长摆满，
     // 这样息屏回来（由下方 AppState 对账补调 finish）状态自动归位，能直接按"开始学习"，
     // 不会卡在"休息中…00:00"、也不会因 isRunning 残留 true 导致开始按钮失灵。
@@ -92,7 +93,7 @@ export default function TimerScreen({ navigation }) {
     setTimeLeft(countUp ? 0 : modes.work.minutes * 60);
     setTotalTime(modes.work.minutes * 60);
     startTimeRef.current = null;
-  }, [mode, customMin, countUp]);
+  }, [mode, customMin, countUp, getElapsed]);
 
   // 息屏/Doze 下 JS 被冻结，驱动 finish 的 setInterval 不跑 → 倒计时到点也不会结算，
   // 表现为"卡在休息 00:00、连开始学习都按不动"。这里在 App 回到前台时做一次对账：
@@ -161,26 +162,27 @@ export default function TimerScreen({ navigation }) {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     cancelScheduled(notifIdRef.current); notifIdRef.current = null;
     stopLiveTimer();
-    if (sessionId && mode === 'work') { await stopSession(sessionId); setSessionId(null); getStreak().then(setStreak); }
+    // 暂停态结束→记暂停那一刻的学习秒数（pausedMsRef）；运行态→记当前已学秒数。均不含暂停挂起的时间。
+    if (sessionId && mode === 'work') { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); getStreak().then(setStreak); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
-  }, [mode, sessionId, customMin, countUp]);
+  }, [mode, sessionId, customMin, countUp, isPaused, getElapsed]);
 
   const switchMode = useCallback((m) => {
     if (isRunning) { clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
       cancelScheduled(notifIdRef.current); notifIdRef.current = null;
       stopLiveTimer();
-      if (mode === 'work' && sessionId) { stopSession(sessionId); setSessionId(null); }
+      if (mode === 'work' && sessionId) { stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
     }
     setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
     startTimeRef.current = null;
-  }, [isRunning, mode, sessionId, customMin, countUp]);
+  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed]);
 
   const handleSubject = useCallback((key) => {
     if (isRunning && mode === 'work') {
       Alert.alert('切换科目', '会结束当前计时', [{ text: '取消', style: 'cancel' }, {
         text: '确定', onPress: async () => {
-          if (sessionId) { await stopSession(sessionId); setSessionId(null); }
+          if (sessionId) { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
           cancelScheduled(notifIdRef.current); notifIdRef.current = null;
           stopLiveTimer();
           clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
@@ -191,7 +193,7 @@ export default function TimerScreen({ navigation }) {
       return;
     }
     setActiveSubject(key);
-  }, [isRunning, mode, sessionId, customMin, countUp]);
+  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed]);
 
   // ====== Settings ======
   const saveDurations = async () => {

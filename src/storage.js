@@ -35,16 +35,22 @@ export async function startSession(subject) {
   return session.id;
 }
 
-// Stop an active session
-export async function stopSession(sessionId, note = '') {
+// Stop an active session.
+// studySeconds：调用方传入的"真实学习秒数"（已扣除暂停时间）。不传则回退用墙钟差
+// （仅用于无暂停信息可恢复的僵尸会话清理）。修复：之前一律用 end-start 墙钟差，
+// 会把"暂停后挂着没结束"的那段时间也算进时长。
+export async function stopSession(sessionId, studySeconds = null) {
   const sessions = await getSessions();
   const idx = sessions.findIndex(s => s.id === sessionId);
   if (idx === -1) return null;
   const session = sessions[idx];
   if (session.end_time) return session;
-  session.end_time = new Date().toISOString();
-  session.duration = Math.floor((new Date(session.end_time) - new Date(session.start_time)) / 1000);
-  session.note = note;
+  const dur = studySeconds != null
+    ? Math.max(0, Math.round(studySeconds))
+    : Math.floor((Date.now() - new Date(session.start_time)) / 1000);
+  // end_time 与 duration 保持一致：duration 已扣除暂停，不能再用墙钟 now 反推 end_time
+  session.end_time = new Date(new Date(session.start_time).getTime() + dur * 1000).toISOString();
+  session.duration = dur;
   sessions[idx] = session;
   await saveSessions(sessions);
   return session;

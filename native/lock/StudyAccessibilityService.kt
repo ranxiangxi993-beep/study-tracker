@@ -23,6 +23,8 @@ class StudyAccessibilityService : AccessibilityService() {
     private val lockHandler = Handler(Looper.getMainLooper())
     private var pendingLock: Runnable? = null
     private var lastAllowedTime = 0L
+    // 上一次前台是否是本 App——用于"离开本App边沿触发"地促升一次胶囊（避免每次窗口变化都重发→闪）
+    private var wasOurApp = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -57,12 +59,15 @@ class StudyAccessibilityService : AccessibilityService() {
         val rootPkg = rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotEmpty() }
         val pkg = rootPkg ?: eventPkg ?: return
 
-        // 流体云促升（与锁机无关，放在 lockActive 判断之前）：用户一离开本 App，
-        // 立刻让 LiveTimerService 重发一次通知，促 ColorOS 尽快把常驻通知晋升成胶囊。
-        // 无障碍是系统级服务、不受本 App 的 JS 线程后台冻结影响，比 JS 的 AppState 回调更快更可靠。
-        if (pkg != "com.kaoyan.studytimer" && LiveTimerService.isRunning) {
+        // 流体云促升（与锁机无关，放在 lockActive 判断之前）：只在"刚从本 App 切走"的那一下
+        // 促升一次。⚠️不能每次窗口变化都重发——TYPE_WINDOWS_CHANGED 很频繁，频繁重发会不断打断
+        // Live Update，胶囊收起又被重新晋升→每隔几秒闪一次（官方文档：更新通知会重置/打断实时活动）。
+        // 边沿触发一次即可，之后交给系统 chronometer 自走，App 一秒都不再碰通知。
+        val isOurApp = pkg == "com.kaoyan.studytimer"
+        if (wasOurApp && !isOurApp && LiveTimerService.isRunning) {
             LiveTimerService.nudge()
         }
+        wasOurApp = isOurApp
 
         if (!lockActive || !serviceReady) return
 
