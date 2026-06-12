@@ -151,7 +151,9 @@ class LiveTimerService : Service() {
         val pi = PendingIntent.getActivity(this, 2003, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        // 【v38】只显示文字标签（学习/短休），不显示时间。通知只发一次、永不更新→不闪、看视频时能被收起。
+        // 【v39】收起的胶囊只显示文字标签（contentTitle，该 ROM 胶囊只渲染它、不显示时间）；
+        // 展开的卡片用系统 chronometer 显示自走倒计时（setWhen 绝对结束时刻 + 倒计时计时器）——
+        // 它在展开视图里由系统每秒自走、App 不重发，所以收起态依旧不闪、看视频能收起。两全。
         val b = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText("专注进行中")
@@ -160,7 +162,9 @@ class LiveTimerService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
             .setWhen(endAt)
-            .setShowWhen(false)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
             // 息屏(AOD)隐藏、亮屏正常显示
             .setVisibility(if (screenOn) Notification.VISIBILITY_PUBLIC else Notification.VISIBILITY_SECRET)
 
