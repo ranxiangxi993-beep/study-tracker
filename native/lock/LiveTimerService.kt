@@ -159,8 +159,12 @@ class LiveTimerService : Service() {
         val pi = PendingIntent.getActivity(this, 2003, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
+        // 【关键】流体云药丸宽度有限，显示的是 contentTitle。之前把"☕ 短休/📖 学习"这种标题放在
+        // contentTitle，加上系统小图标就占满了药丸，倒计时(原在 contentText)挤不进去→只见标题不见秒数。
+        // 改为：倒计时数字打头放进 contentTitle("04:32  ☕ 短休")——时间在最前，即便药丸截断也先保住秒数；
+        // 「短休/学习」退到后面/展开后看。药丸最终呈现「⏱ 04:32…」：系统小图标 + 倒计时。
         val b = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
+            .setContentTitle("$timeText  $title")
             .setContentText("剩余 $timeText")
             .setSmallIcon(smallIconRes())
             .setOngoing(true)
