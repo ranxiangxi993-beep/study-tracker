@@ -49,7 +49,6 @@ class StudyAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!lockActive || !serviceReady) return
         val eventType = event?.eventType ?: return
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
@@ -57,6 +56,15 @@ class StudyAccessibilityService : AccessibilityService() {
         val eventPkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() }
         val rootPkg = rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotEmpty() }
         val pkg = rootPkg ?: eventPkg ?: return
+
+        // 流体云促升（与锁机无关，放在 lockActive 判断之前）：用户一离开本 App，
+        // 立刻让 LiveTimerService 重发一次通知，促 ColorOS 尽快把常驻通知晋升成胶囊。
+        // 无障碍是系统级服务、不受本 App 的 JS 线程后台冻结影响，比 JS 的 AppState 回调更快更可靠。
+        if (pkg != "com.kaoyan.studytimer" && LiveTimerService.isRunning) {
+            LiveTimerService.nudge()
+        }
+
+        if (!lockActive || !serviceReady) return
 
         if (isAllowed(pkg)) {
             lastAllowedTime = System.currentTimeMillis()

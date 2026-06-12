@@ -64,9 +64,11 @@ jobs:
       - name: Package release assets
         run: |
           VERSION_CODE=$(node -p "require('./app.json').expo.android.versionCode || 1")
+          VERSION_NAME=$(node -p "require('./app.json').expo.version || '1.0'")
           # apk 字段带版本号文件名：每版唯一 URL，加速镜像里不存在该缓存，必定下到新包
           # （旧的固定名 app-release.apk 会被镜像按路径缓存、忽略 ?t= 时间戳，导致下到旧包→"已安装相同版本"）
-          echo "{\"versionCode\":$VERSION_CODE,\"apk\":\"app-release-v$VERSION_CODE.apk\"}" > version.json
+          # versionName 仅供更新提示给用户看（如 2.0）；OTA 是否更新仍只看 versionCode。
+          echo "{\"versionCode\":$VERSION_CODE,\"versionName\":\"$VERSION_NAME\",\"apk\":\"app-release-v$VERSION_CODE.apk\"}" > version.json
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
       - name: Publish GitHub Release

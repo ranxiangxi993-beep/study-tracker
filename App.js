@@ -60,7 +60,7 @@ async function checkForUpdate() {
     const verUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/version.json`;
     const verRes = await fetchViaMirror(verUrl);
     if (!verRes) return;
-    const { versionCode, apk } = await verRes.json();
+    const { versionCode, versionName, apk } = await verRes.json();
     if (!versionCode || versionCode <= APP_VERSION_CODE) return;
     // 优先用 version.json 里带版本号的文件名（每版唯一 URL，绕开镜像对固定名 APK 的旧缓存
     // ——那正是"已安装相同版本、下到旧包"的真因）；缺失时回退固定名
@@ -68,7 +68,7 @@ async function checkForUpdate() {
     const apkUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${apkName}`;
     Alert.alert(
       '发现新版本',
-      `研途有新版本 v${versionCode} 可用，是否立即下载安装？`,
+      `研途有新版本 ${versionName ? versionName : 'v' + versionCode} 可用，是否立即下载安装？`,
       [
         { text: '稍后', style: 'cancel' },
         { text: '立即更新', onPress: () => downloadAndInstall(apkUrl) },

@@ -29,6 +29,18 @@ class LiveTimerService : Service() {
     companion object {
         const val CHANNEL_ID = "study-live-timer"
         const val NID = 7100
+        // 胶囊是否正在运行 + 当前实例引用：供 StudyAccessibilityService 在"用户离开本 App"那一刻
+        // 直接捅一下重发通知，让 ColorOS 立刻把常驻通知晋升成流体云胶囊（比 JS 的 AppState 更快更稳）。
+        @Volatile var isRunning = false
+        private var inst: LiveTimerService? = null
+        private var lastNudge = 0L
+        // 无障碍线程调用：轻量节流，避免 TYPE_WINDOWS_CHANGED 连发时狂刷
+        fun nudge() {
+            val now = System.currentTimeMillis()
+            if (now - lastNudge < 500L) return
+            lastNudge = now
+            inst?.repost()
+        }
         fun start(ctx: Context, endAt: Long, totalMs: Long, title: String) {
             val i = Intent(ctx, LiveTimerService::class.java).apply {
                 putExtra("endAt", endAt); putExtra("total", totalMs); putExtra("title", title)
@@ -93,6 +105,8 @@ class LiveTimerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        inst = this
+        isRunning = true
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
@@ -127,6 +141,8 @@ class LiveTimerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
+        inst = null
         handler.removeCallbacks(ticker)
         try { unregisterReceiver(screenReceiver) } catch (_: Throwable) {}
         try { (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NID) } catch (_: Throwable) {}
@@ -134,9 +150,6 @@ class LiveTimerService : Service() {
     }
 
     private fun build(remainingMs: Long): Notification {
-        val totalMs = if (total > 0) total else 1L
-        val elapsed = (totalMs - remainingMs).coerceIn(0L, totalMs)
-        val pct = ((elapsed * 100) / totalMs).toInt().coerceIn(0, 100)
         val secs = remainingMs / 1000
         val timeText = String.format("%02d:%02d", secs / 60, secs % 60)
 
@@ -165,20 +178,13 @@ class LiveTimerService : Service() {
         // 系统据此把它显示为状态栏胶囊；ColorOS 流体云同样读这套谷歌规范。
         b.addExtras(Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
 
-        // 以下为 API 36 专有的"胶囊短文案 + 进度条样式"，用反射调用以零编译风险；
-        // 在安卓16生效，否则静默降级为带倒计时的标准常驻通知。
+        // 折叠态流体云药丸真正显示文字的字段就是 shortCriticalText（API36 专有，反射调用零编译风险）。
+        // 这里 MM:SS 就直接落进胶囊——药丸渲染成「[⏱] 04:32」：系统强制的小图标在左、倒计时在右。
+        // 【关键取舍】不再设 ProgressStyle 进度条：ColorOS 把进度环当药丸主体渲染时会把短文案挤掉，
+        // 导致"只剩图标、看不见秒数"。用户要的是数字而非进度环，故去掉进度条，确保倒计时永远可见。
         if (Build.VERSION.SDK_INT >= 36) {
             runCatching {
                 b.javaClass.getMethod("setShortCriticalText", CharSequence::class.java).invoke(b, timeText)
-            }
-            runCatching {
-                val segCls = Class.forName("android.app.Notification\$ProgressStyle\$Segment")
-                val seg = segCls.getConstructor(Int::class.javaPrimitiveType).newInstance(100)
-                val psCls = Class.forName("android.app.Notification\$ProgressStyle")
-                val ps = psCls.getConstructor().newInstance()
-                psCls.getMethod("setProgressSegments", List::class.java).invoke(ps, listOf(seg))
-                psCls.getMethod("setProgress", Int::class.javaPrimitiveType).invoke(ps, pct)
-                b.setStyle(ps as Notification.Style)
             }
         }
         return b.build()
