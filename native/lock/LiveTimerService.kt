@@ -61,16 +61,11 @@ class LiveTimerService : Service() {
     // 因此息屏把通知设为 SECRET（AOD/息屏不显示），亮屏(锁屏)再设回 PUBLIC 正常显示并恢复每秒走。
     private var screenOn = true
 
+    // 【v35】不再每秒重发（那是"闪/整框跳"的根源）。改用 chronometer 让系统自走秒，
+    // ticker 只负责到点把服务停掉，期间不碰通知，胶囊由系统平滑刷新。
     private val ticker = object : Runnable {
         override fun run() {
-            val remaining = endAt - System.currentTimeMillis()
-            if (remaining <= 0) { stopSelf(); return }
-            // 每秒重发，刷新胶囊/锁屏上的剩余时间。ColorOS 的锁屏不会自行走 chronometer，
-            // 只有重发通知显示才会更新——不重发就卡住不跳、且与真实结束时刻对不上。
-            // （仅在亮屏时跑；息屏时 CPU 睡、本就走不动，由 screenReceiver 停掉避免"闪两下"。）
-            try {
-                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
-            } catch (_: Throwable) {}
+            if (endAt - System.currentTimeMillis() <= 0) { stopSelf(); return }
             handler.postDelayed(this, 1000)
         }
     }
@@ -131,9 +126,10 @@ class LiveTimerService : Service() {
         val remaining = (endAt - System.currentTimeMillis()).coerceAtLeast(0L)
         startForeground(NID, build(remaining))
         handler.removeCallbacks(ticker)
-        // 200ms 后就补发一次：部分 ROM(ColorOS/HyperOS) 要等到通知第一次"被更新"才把它
-        // 晋升成胶囊，等满 1 秒会让胶囊明显延迟出现（v24 的 15s 节流更是延迟到十几秒）。
-        handler.postDelayed(ticker, 200)
+        handler.postDelayed(ticker, 1000)   // 仅周期检查到点 stopSelf（不再每秒重发）
+        // 一次性补发(非循环)：部分 ROM(ColorOS/HyperOS) 要等通知第一次"被更新"才晋升成胶囊。
+        // 只发这一发促晋升，之后全交给系统 chronometer 自走，绝不每秒重发→不闪。
+        handler.postDelayed({ repost() }, 400)
         // 被系统杀掉不自动重启（结束提醒由 TimerAlarm 的 setAlarmClock 负责，互不依赖）
         return START_NOT_STICKY
     }
@@ -159,37 +155,27 @@ class LiveTimerService : Service() {
         val pi = PendingIntent.getActivity(this, 2003, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        // 【关键】流体云药丸宽度有限、显示的是 contentTitle。contentTitle 只放纯倒计时 MM:SS：
-        // 药丸最短、每秒只刷新这串数字本身（不再带"☕短休"标签一起又长又闪）。
-        // 「短休/学习」标签退到 contentText，仅在下拉/展开通知时才看；药丸里只剩系统小图标(强制) + 倒计时。
+        // 【v35 核心】用系统 chronometer 自走秒，不再每秒重发——这是"不闪/不跳"的关键。
+        // setWhen(endAt 绝对时刻) + setUsesChronometer + setChronometerCountDown：系统每秒平滑刷新
+        // 倒计时 MM:SS，App 一秒都不用重发通知（重发=整框重绘=闪）。基准是绝对 endAt、不被重置，故不跳。
+        // contentTitle 不再放静态时间（不重发会冻住）；标签退到 contentText 仅展开看，药丸由系统走时显示。
         val b = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(timeText)
-            .setContentText(title)
+            .setContentTitle(title)
+            .setContentText("剩余 $timeText")
             .setSmallIcon(smallIconRes())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
             .setWhen(endAt)
-            .setShowWhen(false)
-            // 息屏(AOD)隐藏、亮屏(锁屏)正常显示：避免息屏留下一张冻结的卡
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            // 息屏(AOD)隐藏、亮屏(锁屏)正常显示：该 ROM 的 AOD 不自走 chronometer，息屏会留一张冻结卡
             .setVisibility(if (screenOn) Notification.VISIBILITY_PUBLIC else Notification.VISIBILITY_SECRET)
-            // 不用 chronometer：①系统自动走时是"分钟级"粗粒度，看着像卡住、和真实结束秒数对不上；
-            // ②每秒重发时 chronometer 基准被重置会触发整张卡重新布局——这正是"整框一起跳"的主因。
-            // 改为每秒重发、只更新 contentText/shortCriticalText 的 MM:SS 静态文本，让锁屏"原地换数字"。
 
         // 请求"晋升为常驻实时通知"——仅是一个 Bundle 布尔位，无新方法，必定可编译。
         // 系统据此把它显示为状态栏胶囊；ColorOS 流体云同样读这套谷歌规范。
         b.addExtras(Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
-
-        // 折叠态流体云药丸真正显示文字的字段就是 shortCriticalText（API36 专有，反射调用零编译风险）。
-        // 这里 MM:SS 就直接落进胶囊——药丸渲染成「[⏱] 04:32」：系统强制的小图标在左、倒计时在右。
-        // 【关键取舍】不再设 ProgressStyle 进度条：ColorOS 把进度环当药丸主体渲染时会把短文案挤掉，
-        // 导致"只剩图标、看不见秒数"。用户要的是数字而非进度环，故去掉进度条，确保倒计时永远可见。
-        if (Build.VERSION.SDK_INT >= 36) {
-            runCatching {
-                b.javaClass.getMethod("setShortCriticalText", CharSequence::class.java).invoke(b, timeText)
-            }
-        }
         return b.build()
     }
 
