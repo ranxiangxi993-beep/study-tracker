@@ -61,16 +61,13 @@ class LiveTimerService : Service() {
     // 因此息屏把通知设为 SECRET（AOD/息屏不显示），亮屏(锁屏)再设回 PUBLIC 正常显示并恢复每秒走。
     private var screenOn = true
 
-    // 【v37】每秒重发刷新 contentTitle 里的 MM:SS——该 ROM 胶囊不自走 chronometer，只能这样让数字走动。
-    // 仅在亮屏时跑；息屏 CPU 睡本就走不动，由 screenReceiver 停掉。这是"原地换数字"，不是收起又弹出的闪。
+    // 【v38】用户诉求：胶囊只显示文字标签、不显示时间；不要闪、要能被 ColorOS 收起（看视频时）。
+    // 实现=通知只发一次、之后永不更新：没有时间要刷新就不会闪；不更新→ColorOS 会在看视频时把胶囊收起。
+    // ticker 仅每 5 秒检查到点 stopSelf，期间绝不碰通知。
     private val ticker = object : Runnable {
         override fun run() {
-            val remaining = endAt - System.currentTimeMillis()
-            if (remaining <= 0) { stopSelf(); return }
-            try {
-                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NID, build(remaining))
-            } catch (_: Throwable) {}
-            handler.postDelayed(this, 1000)
+            if (endAt - System.currentTimeMillis() <= 0) { stopSelf(); return }
+            handler.postDelayed(this, 5000)
         }
     }
 
@@ -148,29 +145,23 @@ class LiveTimerService : Service() {
     }
 
     private fun build(remainingMs: Long): Notification {
-        val secs = remainingMs / 1000
-        val timeText = String.format("%02d:%02d", secs / 60, secs % 60)
-
         val launch = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         } ?: Intent()
         val pi = PendingIntent.getActivity(this, 2003, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        // 【v37 真机结论】这台 ColorOS 胶囊只渲染 contentTitle、不读 chronometer（v35/v36 用系统自走
-        // 结果胶囊只剩"☕短休"无数字证实）。所以倒计时只能放进 contentTitle、每秒重发刷新——这是该 ROM
-        // 唯一能让胶囊显示走动倒计时的办法。contentTitle 只放纯 MM:SS（无标签、最短）；标签退 contentText。
-        // 注：每秒"原地更新数字"≠之前"收起又弹出"的闪——那个闪是无障碍每次窗口变化重发(v36 已改边沿触发)。
+        // 【v38】只显示文字标签（学习/短休），不显示时间。通知只发一次、永不更新→不闪、看视频时能被收起。
         val b = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(timeText)
-            .setContentText(title)
+            .setContentTitle(title)
+            .setContentText("专注进行中")
             .setSmallIcon(smallIconRes())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pi)
             .setWhen(endAt)
             .setShowWhen(false)
-            // 息屏(AOD)隐藏、亮屏(锁屏)正常显示：避免每秒重发在 AOD 留下一张每秒重绘的卡
+            // 息屏(AOD)隐藏、亮屏正常显示
             .setVisibility(if (screenOn) Notification.VISIBILITY_PUBLIC else Notification.VISIBILITY_SECRET)
 
         // 请求"晋升为常驻实时通知"——仅是一个 Bundle 布尔位，无新方法，必定可编译。
