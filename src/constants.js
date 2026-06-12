@@ -27,6 +27,6 @@ export const COLORS = {
 export const DEFAULT_GOAL_MINUTES = 120; // 每科默认2小时
 
 // 自更新版本号 — 每次要推送更新时与 app.json 的 android.versionCode 同步递增（OTA 靠它比对，必须单调 +1）
-export const APP_VERSION_CODE = 32;
+export const APP_VERSION_CODE = 33;
 // 给用户看的版本名（与 app.json 的 expo.version 同步）；和上面的内部递增号解耦，可随心命名
 export const APP_VERSION_NAME = '2.0';
