@@ -105,20 +105,10 @@ export default function TimerScreen({ navigation }) {
       if (remaining <= 0) finish();
     }
   };
-  // 退到后台时立刻重发一次胶囊：ColorOS 要等通知"被更新"才晋升成状态栏胶囊，
-  // 离开 App 的瞬间补一发能让胶囊马上出现，而不是过一会才冒出来。
   const liveTitleRef = useRef(null);
-  const bgNudgeRef = useRef(() => {});
-  bgNudgeRef.current = () => {
-    if (isRunning && !isPaused && !countUp && startTimeRef.current && liveTitleRef.current) {
-      const remaining = modes[mode].minutes * 60 - getElapsed();
-      if (remaining > 0) startLiveTimer(remaining, liveTitleRef.current);
-    }
-  };
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') reconcileRef.current();
-      else if (s === 'background' || s === 'inactive') bgNudgeRef.current();
     });
     return () => sub.remove();
   }, []);

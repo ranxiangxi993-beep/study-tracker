@@ -53,6 +53,8 @@ export async function openFullScreenIntentSettings() {
 const CHANNEL_ID = 'study-reminders-max';
 const OLD_CHANNEL_IDS = ['study-reminders'];
 const PLAN_IDS_KEY = 'plan_notif_ids';
+const PLAN_NOTIFICATION_KIND = 'daily-plan-reminder';
+const PLAN_NOTIFICATION_TITLE = '📅 即将开始';
 
 // 前台收到通知时也弹出横幅(否则前台默认静默)
 Notifications.setNotificationHandler({
@@ -65,6 +67,7 @@ Notifications.setNotificationHandler({
 });
 
 let permGranted = false;
+let planSyncQueue = Promise.resolve();
 
 // 申请通知权限 + 建立安卓通知渠道。App 启动时调一次。
 export async function ensureNotifPermission() {
@@ -169,6 +172,7 @@ async function scheduleDaily(hour, minute, title, body) {
         title, body, sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX, // 触发悬浮横幅
         vibrationPattern: [0, 250, 250, 250],
+        data: { kind: PLAN_NOTIFICATION_KIND },
       },
       trigger: {
         type: 'daily', // SchedulableTriggerInputTypes.DAILY
@@ -182,27 +186,73 @@ async function scheduleDaily(hour, minute, title, body) {
   }
 }
 
+async function cancelExistingPlanNotifications() {
+  const oldIds = JSON.parse((await AsyncStorage.getItem(PLAN_IDS_KEY)) || '[]');
+  const ids = new Set(oldIds.filter(Boolean));
+
+  // 兼容旧版本：早期只把 id 存在 AsyncStorage 里；如果并发同步或升级导致 id 丢失，
+  // 这里按通知内容再扫一遍，清掉所有日程开始提醒，避免每天重复弹。
+  if (Notifications.getAllScheduledNotificationsAsync) {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled || []) {
+      const title = n?.content?.title;
+      const kind = n?.content?.data?.kind;
+      if (kind === PLAN_NOTIFICATION_KIND || title === PLAN_NOTIFICATION_TITLE || title?.includes?.('即将开始')) {
+        ids.add(n.identifier);
+      }
+    }
+  }
+
+  for (const id of ids) await cancelScheduled(id);
+  await AsyncStorage.setItem(PLAN_IDS_KEY, '[]');
+}
+
+function buildPlanReminders(plan) {
+  const reminders = new Map();
+
+  for (const s of plan) {
+    if (!s.start) continue;
+    const [sh, sm] = s.start.split(':').map(Number);
+    if (!Number.isFinite(sh) || !Number.isFinite(sm)) continue;
+
+    const subjName = s.customName || SUBJECTS[s.subject]?.name || '课程';
+    const t = shiftTime(sh, sm, 2); // 开始前 2 分钟
+    const key = `${t.hour}:${t.minute}`;
+    const item = reminders.get(key) || { hour: t.hour, minute: t.minute, subjects: [] };
+    item.subjects.push(`${s.start} ${subjName}`);
+    reminders.set(key, item);
+  }
+
+  return [...reminders.values()];
+}
+
 // 根据当前每日计划，重建所有"每日重复"提醒。
 // 计划修改后 / App 启动时调用即可，系统会每天自动按点提醒。
 export async function syncPlanNotifications() {
+  planSyncQueue = planSyncQueue
+    .catch(() => {})
+    .then(runSyncPlanNotifications);
+  return planSyncQueue;
+}
+
+async function runSyncPlanNotifications() {
   try {
-    // 先清掉上次预约的日程通知（只清日程的，不动番茄钟那条）
-    const oldIds = JSON.parse((await AsyncStorage.getItem(PLAN_IDS_KEY)) || '[]');
-    for (const id of oldIds) await cancelScheduled(id);
+    // 先清掉所有日程提醒（包括旧版本或并发同步留下的孤儿预约），不动番茄钟结束提醒。
+    await cancelExistingPlanNotifications();
 
     const data = await AsyncStorage.getItem('daily_plan');
     const plan = data ? JSON.parse(data) : [];
     const newIds = [];
 
-    for (const s of plan) {
-      const subjName = s.customName || SUBJECTS[s.subject]?.name || '课程';
-      // 只推"即将开始"，不再推"即将结束"（结束提醒太繁琐，用户嫌烦）
-      if (s.start) {
-        const [sh, sm] = s.start.split(':').map(Number);
-        const t = shiftTime(sh, sm, 2); // 开始前 2 分钟
-        const id = await scheduleDaily(t.hour, t.minute, '📅 即将开始', `${s.start} ${subjName}`);
-        if (id) newIds.push(id);
-      }
+    // 只推"即将开始"，不再推"即将结束"；同一分钟的多门课合成一条，避免连续弹窗。
+    for (const reminder of buildPlanReminders(plan)) {
+      const id = await scheduleDaily(
+        reminder.hour,
+        reminder.minute,
+        PLAN_NOTIFICATION_TITLE,
+        reminder.subjects.join('、')
+      );
+      if (id) newIds.push(id);
     }
 
     await AsyncStorage.setItem(PLAN_IDS_KEY, JSON.stringify(newIds));
