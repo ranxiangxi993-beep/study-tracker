@@ -13,6 +13,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import TimerScreen from './src/screens/TimerScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import StatsScreen from './src/screens/StatsScreen';
+import LockScreen from './src/screens/LockScreen';
 import CountdownScreen from './src/screens/CountdownScreen';
 import { COLORS, APP_VERSION_CODE } from './src/constants';
 import { ensureNotifPermission, syncPlanNotifications } from './src/notify';
@@ -138,6 +139,8 @@ function TabsNavigator() {
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📅" label="日程" focused={focused} /> }} />
       <Tab.Screen name="Stats" component={StatsScreen}
         options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="统计" focused={focused} /> }} />
+      <Tab.Screen name="Lock" component={LockScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🔒" label="锁机" focused={focused} /> }} />
     </Tab.Navigator>
   );
 }

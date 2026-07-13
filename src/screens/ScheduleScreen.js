@@ -56,20 +56,50 @@ export default function ScheduleScreen() {
 
   // Get today's schedule using this daily plan
   const todayPlan = plan.sort((a, b) => a.start.localeCompare(b.start));
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const doneCount = todayPlan.filter(item => {
+    const [eh, em] = (item.end || '23:59').split(':').map(Number);
+    return nowMin >= eh * 60 + em;
+  }).length;
+  const currentItem = todayPlan.find(item => {
+    const [sh, sm] = item.start.split(':').map(Number);
+    const [eh, em] = (item.end || '23:59').split(':').map(Number);
+    return nowMin >= sh * 60 + sm && nowMin < eh * 60 + em;
+  });
+  const nextItem = todayPlan.find(item => {
+    const [sh, sm] = item.start.split(':').map(Number);
+    return sh * 60 + sm > nowMin;
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>📅 每日安排</Text>
+        <View>
+          <Text style={styles.title}>今日计划</Text>
+          <Text style={styles.subtitle}>固定日程 · 到点提醒</Text>
+        </View>
         <TouchableOpacity style={styles.addBtn} onPress={() => { setEditing(null); setShowEditor(true); }}>
           <Text style={styles.addBtnText}>+ 添加</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Hint */}
-        <View style={styles.hint}>
-          <Text style={styles.hintText}>💡 每天自动按此计划执行，修改后新计划长期生效</Text>
+        <View style={styles.overview}>
+          <View style={styles.overviewTop}>
+            <View>
+              <Text style={styles.overviewLabel}>当前</Text>
+              <Text style={styles.overviewTitle}>
+                {currentItem ? (currentItem.customName || SUBJECTS[currentItem.subject]?.name || '学习中') : '暂无进行中'}
+              </Text>
+            </View>
+            <Text style={styles.overviewBadge}>{doneCount}/{todayPlan.length || 0}</Text>
+          </View>
+          <View style={styles.overviewMetrics}>
+            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>{todayPlan.length}</Text><Text style={styles.metricText}>计划项</Text></View>
+            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>{nextItem?.start || '--:--'}</Text><Text style={styles.metricText}>下一项</Text></View>
+            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>合并</Text><Text style={styles.metricText}>同分钟提醒</Text></View>
+          </View>
         </View>
 
         {/* Today's schedule */}
@@ -279,10 +309,20 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 12 },
-  title: { fontSize: 20, fontWeight: '700', color: COLORS.text },
+  title: { fontSize: 24, fontWeight: '800', color: COLORS.text },
+  subtitle: { fontSize: 12, color: COLORS.text2, marginTop: 4 },
   addBtn: { backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   addBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   scroll: { flex: 1, paddingHorizontal: 20 },
+  overview: { backgroundColor: COLORS.card, borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
+  overviewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  overviewLabel: { color: COLORS.text2, fontSize: 11, fontWeight: '700' },
+  overviewTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
+  overviewBadge: { color: '#fff', backgroundColor: COLORS.accent, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, overflow: 'hidden', fontSize: 12, fontWeight: '800' },
+  overviewMetrics: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  overviewMetric: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 12, padding: 10 },
+  metricStrong: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
+  metricText: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 4 },
   hint: { backgroundColor: 'rgba(255,107,107,0.1)', borderRadius: 8, padding: 8, marginBottom: 10 },
   hintText: { fontSize: 12, color: COLORS.text2, textAlign: 'center', lineHeight: 18 },
   empty: { alignItems: 'center', paddingVertical: 60 },
@@ -299,8 +339,8 @@ const styles = StyleSheet.create({
   timeEnd: { fontSize: 9, color: COLORS.text2 },
   slotContent: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.card, borderRadius: 8, padding: 8,
-    borderLeftWidth: 2, marginLeft: 6,
+    backgroundColor: COLORS.card, borderRadius: 14, padding: 12,
+    borderLeftWidth: 3, marginLeft: 6, borderWidth: 1, borderColor: COLORS.border,
   },
   slotInfo: { flex: 1 },
   slotSubject: { fontSize: 12, fontWeight: '600', color: COLORS.text },

@@ -4,9 +4,10 @@ import {
   Modal, TextInput, Pressable,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import PieChart from '../components/PieChart';
 
-import { SUBJECTS, COLORS } from '../constants';
+import { SUBJECTS, COLORS, DEFAULT_GOAL_MINUTES } from '../constants';
 import { useBg } from '../../App';
 import {
   getPeriodStats, getHistory, getHistoryCount,
@@ -16,7 +17,18 @@ import {
 } from '../storage';
 
 // Month calendar grid
-function CalendarGrid({ year, month, data }) {
+function heatColor(min, goalMin) {
+  if (!min) return COLORS.card2;
+  const ratio = min / Math.max(1, goalMin);
+  if (ratio >= 1.5) return '#e74c3c';
+  if (ratio >= 1) return '#f39c12';
+  if (ratio >= 0.75) return '#2ecc71';
+  if (ratio >= 0.5) return '#1f9d58';
+  if (ratio >= 0.25) return '#1a6b3a';
+  return '#2a4a3a';
+}
+
+function CalendarGrid({ year, month, data, goalMin }) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay() || 7; // Mon=1..Sun=7
   const DAYS = ['一','二','三','四','五','六','日'];
@@ -37,7 +49,7 @@ function CalendarGrid({ year, month, data }) {
         {cells.map((c, i) => (
           <View key={i} style={{
             width: 34, height: 34, margin: 1, borderRadius: 6, justifyContent: 'center', alignItems: 'center',
-            backgroundColor: c ? (c.min === 0 ? COLORS.card2 : c.min < 15 ? '#2a4a3a' : c.min < 30 ? '#1a6b3a' : c.min < 60 ? '#1a8b4a' : c.min < 120 ? '#2ecc71' : '#e74c3c') : 'transparent'
+            backgroundColor: c ? heatColor(c.min, goalMin) : 'transparent'
           }}>
             <Text style={{ fontSize: 11, color: c ? (c.min === 0 ? COLORS.text2 : '#fff') : 'transparent', fontWeight: c && c.min > 0 ? '700' : '400' }}>
               {c ? c.day : ''}
@@ -45,6 +57,15 @@ function CalendarGrid({ year, month, data }) {
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
     </View>
   );
 }
@@ -86,6 +107,7 @@ export default function StatsScreen() {
   const [page, setPage] = useState(0);
   const [weekData, setWeekData] = useState([]);
   const [heatmapData, setHeatmapData] = useState({});
+  const [dailyGoalMin, setDailyGoalMin] = useState(DEFAULT_GOAL_MINUTES);
   const now = new Date();
   const [selMonth, setSelMonth] = useState(now.getMonth());
   const [selYear, setSelYear] = useState(now.getFullYear());
@@ -127,6 +149,9 @@ export default function StatsScreen() {
       getWeekStats(),
     ]);
     getYearlyHeatmap(selYear).then(setHeatmapData);
+    AsyncStorage.getItem('daily_goal_minutes').then(v => {
+      setDailyGoalMin(Math.max(1, parseInt(v) || DEFAULT_GOAL_MINUTES));
+    });
     setStats(periodStats);
     setSessions(hist);
     setSessionsTotal(count);
@@ -211,6 +236,7 @@ export default function StatsScreen() {
 
   const periodLabel = PERIODS.find(p => p.key === period)?.label || '';
   const weekDays = getWeekDays();
+  const subjectCount = Object.values(stats.subjects || {}).filter(v => v > 0).length;
 
   // Week bar chart data (only show for day/week period)
   const maxWeekSec = Math.max(1, ...weekData.map(d => d.total_sec));
@@ -238,6 +264,21 @@ export default function StatsScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{formatDuration(stats.total_sec || 0)}</Text>
+            <Text style={styles.summaryLabel}>{periodLabel}总计</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{dailyGoalMin}′</Text>
+            <Text style={styles.summaryLabel}>每日最低</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{subjectCount}</Text>
+            <Text style={styles.summaryLabel}>学习科目</Text>
+          </View>
         </View>
 
         {/* Month Nav: year row + month row */}
@@ -271,7 +312,14 @@ export default function StatsScreen() {
 
         {/* Month Calendar Grid */}
         {period === 'month' && (
-          <CalendarGrid year={selYear} month={selMonth} data={heatmapData} />
+          <>
+            <CalendarGrid year={selYear} month={selMonth} data={heatmapData} goalMin={dailyGoalMin} />
+            <View style={styles.heatLegend}>
+              <LegendDot color="#1a6b3a" label="未达标" />
+              <LegendDot color="#f39c12" label="达标" />
+              <LegendDot color="#e74c3c" label="超额" />
+            </View>
+          </>
         )}
 
         {/* Week bar (for overview) */}
@@ -481,6 +529,14 @@ const styles = StyleSheet.create({
   periodTabActive: { backgroundColor: COLORS.card2 },
   periodTabText: { fontSize: 13, fontWeight: '600', color: COLORS.text2 },
   periodTabTextActive: { color: '#fff' },
+  summaryRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginTop: 12 },
+  summaryCard: { flex: 1, backgroundColor: COLORS.card, borderRadius: 14, padding: 11, borderWidth: 1, borderColor: COLORS.border },
+  summaryValue: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  summaryLabel: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 4 },
+  heatLegend: { flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 9, height: 9, borderRadius: 3 },
+  legendText: { color: COLORS.text2, fontSize: 10, fontWeight: '700' },
   nav: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 },
   navRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16, marginVertical: 2 },
   navArrow: { fontSize: 16, color: COLORS.text2, paddingHorizontal: 8, paddingVertical: 4 },

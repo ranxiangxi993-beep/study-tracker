@@ -3,13 +3,14 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Vibration, Alert, Platform, Modal, TextInput, Pressable, AppState,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
 import TimerCircle from '../components/TimerCircle';
 import SubjectSelector from '../components/SubjectSelector';
-import { SUBJECTS, TIMER_MODES, COLORS, APP_VERSION_NAME, APP_VERSION_CODE } from '../constants';
+import { SUBJECTS, TIMER_MODES, COLORS, DEFAULT_GOAL_MINUTES, APP_VERSION_NAME, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, openFullScreenIntentSettings, startLiveTimer, stopLiveTimer } from '../notify';
@@ -38,14 +39,19 @@ export default function TimerScreen({ navigation }) {
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
   const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
+  const [dailyGoalMin, setDailyGoalMin] = useState(String(DEFAULT_GOAL_MINUTES));
   const [cdDays, setCdDays] = useState(null);
   const [cdStudied, setCdStudied] = useState(null);
+  const [todayStats, setTodayStats] = useState({});
 
   const modes = {
     work:  { ...TIMER_MODES.work,  minutes: customMin.work },
     short: { ...TIMER_MODES.shortBreak, minutes: customMin.short },
     long:  { ...TIMER_MODES.longBreak,  minutes: customMin.long },
   };
+  const todayTotal = Object.values(todayStats).reduce((sum, sec) => sum + sec, 0);
+  const todayGoal = Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES) * 60;
+  const goalPct = Math.min(100, Math.round(todayTotal / todayGoal * 100));
   const cfg = modes[mode];
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -74,6 +80,12 @@ export default function TimerScreen({ navigation }) {
     }
     setTotalTime(modes[mode].minutes * 60);
   }, [countUp, mode, customMin, getElapsed]);
+
+  useFocusEffect(
+    useCallback(() => {
+      getTodayStats().then(setTodayStats);
+    }, [])
+  );
 
   const finish = useCallback(async () => {
     Vibration.vibrate([500, 200, 500, 200, 800]);
@@ -190,8 +202,11 @@ export default function TimerScreen({ navigation }) {
     const w = Math.max(1, parseInt(editMin.work) || 25);
     const s = Math.max(1, parseInt(editMin.short) || 5);
     const l = Math.max(1, parseInt(editMin.long) || 15);
+    const goal = Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES);
     setCustomMin({ work: w, short: s, long: l });
     await AsyncStorage.setItem('custom_durations', JSON.stringify({ work: w, short: s, long: l }));
+    setDailyGoalMin(String(goal));
+    await AsyncStorage.setItem('daily_goal_minutes', String(goal));
     if (!isRunning) { setTimeLeft(countUp ? 0 : w * 60); setTotalTime(w * 60); }
   };
 
@@ -248,6 +263,9 @@ export default function TimerScreen({ navigation }) {
         setTimeLeft(workSec); setTotalTime(workSec);
       });
     });
+    AsyncStorage.getItem('daily_goal_minutes').then(v => {
+      if (v) setDailyGoalMin(v);
+    });
     AsyncStorage.getItem('accent_color').then(c => { if (c) setAccentColor(c); });
     AsyncStorage.getItem('break_colors').then(d => { if (d) setBreakColors(JSON.parse(d)); });
     AsyncStorage.getItem('wl_pkgs').then(d => { if (d) setWlPkgs(JSON.parse(d)); });
@@ -286,30 +304,56 @@ export default function TimerScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      <View style={styles.body}>
-        <View style={styles.timerWrap}>
-          <TimerCircle timeLeft={timeLeft} progress={ringProgress} modeColor={timerColor} label={label} />
-        </View>
-
-        {/* Count direction */}
-        <TouchableOpacity style={styles.toggle} onPress={() => { if (isRunning) return; setCountUp(!countUp); setTimeLeft(!countUp ? 0 : modes[mode].minutes * 60); setTotalTime(modes[mode].minutes * 60); }}>
-          <Text style={styles.toggleT}>{countUp ? '⏫ 正计时' : '⏬ 倒计时'}</Text>
-        </TouchableOpacity>
-
-        {/* Mode tabs */}
-        <View style={styles.modes}>
-          {Object.entries(modes).map(([k, c]) => (
-            <TouchableOpacity key={k} style={[styles.mtab, mode === k && { backgroundColor: k === 'work' ? accentColor + '33' : COLORS.card2 }]}
-              onPress={() => switchMode(k)}
-              onLongPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
-              <Text style={[styles.mt, mode === k && { color: '#fff' }]}>{c.label} · {c.minutes}′</Text>
+      <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        <View style={styles.focusCard}>
+          <View style={styles.focusTop}>
+            <View>
+              <Text style={styles.focusKicker}>{mode === 'work' ? '当前学习段' : '当前休息段'}</Text>
+              <Text style={styles.focusSubject}>{mode === 'work' ? SUBJECTS[activeSubject]?.name || '学习' : cfg.label.replace(/^[^\s]+ /, '')}</Text>
+            </View>
+            <TouchableOpacity style={styles.modeMini} onPress={() => { if (!isRunning) setCountUp(!countUp); }}>
+              <Text style={styles.modeMiniText}>{countUp ? '正计时' : '倒计时'}</Text>
             </TouchableOpacity>
-          ))}
+          </View>
+          <View style={styles.timerWrap}>
+            <TimerCircle timeLeft={timeLeft} progress={ringProgress} modeColor={timerColor} label={label} />
+          </View>
+          <View style={styles.lockStateRow}>
+            <Text style={styles.lockStateText}>{locked ? '强力锁机中' : bindLabel(isRunning, locked)}</Text>
+            <Text style={styles.lockStateMeta}>{cfg.minutes} 分钟 · {countUp ? '自由记录' : '到点提醒'}</Text>
+          </View>
         </View>
 
-        <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
+        <View style={styles.metricRow}>
+          <Metric value={formatDuration(todayTotal)} label="今日已学" />
+          <Metric value={`${goalPct}%`} label="目标进度" />
+          <Metric value={locked ? '已开' : '待开'} label="专注锁" />
+        </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 }}>
+        <View style={styles.panel}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>学习模式</Text>
+            <TouchableOpacity onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
+              <Text style={styles.panelAction}>设置</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modes}>
+            {Object.entries(modes).map(([k, c]) => (
+              <TouchableOpacity key={k} style={[styles.mtab, mode === k && { backgroundColor: k === 'work' ? accentColor + '33' : COLORS.card2 }]}
+                onPress={() => switchMode(k)}
+                onLongPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
+                <Text style={[styles.mt, mode === k && { color: '#fff' }]}>{c.label} · {c.minutes}′</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>科目</Text>
+          <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
+        </View>
+
+        <View style={styles.quickActions}>
           <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
             if (locked) { await unlockScreen(); setLocked(false); return; }
             const hasAcc = await isAccessibilityEnabled();
@@ -367,7 +411,7 @@ export default function TimerScreen({ navigation }) {
 
         {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
         <Text style={styles.hint}>长按模式卡片修改时长 · ⚙️ 设置背景和更多</Text>
-      </View>
+      </ScrollView>
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
@@ -389,7 +433,14 @@ export default function TimerScreen({ navigation }) {
                 <TouchableOpacity onPress={() => setEditMin(p => ({ ...p, [item.f]: String((parseInt(p[item.f])||1)+5) }))}><Text style={styles.db}>+5</Text></TouchableOpacity>
               </View>
             ))}
-            <TouchableOpacity style={styles.sv} onPress={() => { saveDurations(); setShowSettings(false); }}><Text style={styles.svT}>保存时长</Text></TouchableOpacity>
+            <Text style={[styles.lbl, { marginTop: 10 }]}>🎯 每日最低学习时长（分钟）</Text>
+            <View style={styles.dr}>
+              <Text style={styles.dl}>热力图达标线</Text>
+              <TouchableOpacity onPress={() => setDailyGoalMin(p => String(Math.max(1, (parseInt(p) || DEFAULT_GOAL_MINUTES) - 30)))}><Text style={styles.db}>−30</Text></TouchableOpacity>
+              <TextInput style={styles.di} keyboardType="numeric" value={dailyGoalMin} onChangeText={setDailyGoalMin} />
+              <TouchableOpacity onPress={() => setDailyGoalMin(p => String((parseInt(p) || DEFAULT_GOAL_MINUTES) + 30))}><Text style={styles.db}>+30</Text></TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.sv} onPress={() => { saveDurations(); setShowSettings(false); }}><Text style={styles.svT}>保存设置</Text></TouchableOpacity>
 
             <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 学习圆环色</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
@@ -475,22 +526,56 @@ export default function TimerScreen({ navigation }) {
   );
 }
 
+function bindLabel(isRunning, locked) {
+  if (locked) return '锁机已绑定';
+  if (isRunning) return '建议开启锁机';
+  return '准备开始';
+}
+
+function Metric({ value, label }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  body: { flex: 1, alignItems: 'center', paddingTop: 116, paddingHorizontal: 16 },
+  bodyScroll: { flex: 1 },
+  body: { paddingTop: 112, paddingHorizontal: 16, paddingBottom: 32 },
   hd: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 8 },
   cdBar: { position: 'absolute', top: Platform.OS === 'android' ? 88 : 100, left: 0, right: 0, zIndex: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 20, backgroundColor: 'rgba(255,107,107,0.08)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,107,107,0.12)' },
   cdBarText: { fontSize: 12, color: 'rgba(255,180,180,0.85)', fontWeight: '600', letterSpacing: 0.3 },
   cdArrow: { fontSize: 14, color: 'rgba(255,180,180,0.5)', marginLeft: 6 },
-  timerWrap: { marginBottom: 8 },
+  timerWrap: { marginVertical: 8, alignItems: 'center' },
   gear: { fontSize: 22, color: COLORS.text2 },
   ttl: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   sb: { backgroundColor: '#e74c3c', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
   sbt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  focusCard: { backgroundColor: COLORS.card, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  focusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  focusKicker: { color: COLORS.text2, fontSize: 12, fontWeight: '700' },
+  focusSubject: { color: COLORS.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
+  modeMini: { borderRadius: 999, backgroundColor: COLORS.card2, paddingHorizontal: 12, paddingVertical: 7 },
+  modeMiniText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  lockStateRow: { alignItems: 'center', paddingTop: 4 },
+  lockStateText: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
+  lockStateMeta: { color: COLORS.text2, fontSize: 11, marginTop: 4 },
+  metricRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  metric: { flex: 1, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border },
+  metricValue: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
+  metricLabel: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 5 },
+  panel: { backgroundColor: COLORS.card, borderRadius: 16, padding: 12, marginTop: 10, borderWidth: 1, borderColor: COLORS.border },
+  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  panelTitle: { color: COLORS.text2, fontSize: 12, fontWeight: '800', marginBottom: 8 },
+  panelAction: { color: COLORS.accent, fontSize: 12, fontWeight: '800' },
+  quickActions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: COLORS.card, borderRadius: 16 },
   toggleT: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   toggleHint: { fontSize: 11, color: COLORS.text2 },
-  modes: { flexDirection: 'row', backgroundColor: COLORS.card, borderRadius: 12, padding: 3, gap: 2, marginTop: 12 },
+  modes: { flexDirection: 'row', backgroundColor: COLORS.card2, borderRadius: 12, padding: 3, gap: 2 },
   mtab: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center' },
   mtabOn: { backgroundColor: COLORS.card2 },
   mt: { fontSize: 11, fontWeight: '600', color: COLORS.text2 },
