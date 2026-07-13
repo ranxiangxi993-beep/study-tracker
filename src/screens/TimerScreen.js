@@ -43,6 +43,7 @@ export default function TimerScreen({ navigation }) {
   const [cdDays, setCdDays] = useState(null);
   const [cdStudied, setCdStudied] = useState(null);
   const [todayStats, setTodayStats] = useState({});
+  const [nextPlanItem, setNextPlanItem] = useState(null);
 
   const modes = {
     work:  { ...TIMER_MODES.work,  minutes: customMin.work },
@@ -84,6 +85,10 @@ export default function TimerScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       getTodayStats().then(setTodayStats);
+      AsyncStorage.getItem('daily_plan').then(data => {
+        const plan = data ? JSON.parse(data) : [];
+        setNextPlanItem(findNextPlanItem(plan));
+      }).catch(() => setNextPlanItem(null));
     }, [])
   );
 
@@ -294,16 +299,6 @@ export default function TimerScreen({ navigation }) {
         <View style={styles.sb}><Text style={styles.sbt}>🔥 {streak}天</Text></View>
       </View>
 
-      {cdDays !== null && (
-        <TouchableOpacity style={styles.cdBar} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.7}>
-          <Text style={styles.cdBarText}>
-            🎯 还有 {cdDays} 天
-            {cdStudied !== null ? `  ·  已备考 ${cdStudied} 天` : ''}
-          </Text>
-          <Text style={styles.cdArrow}>›</Text>
-        </TouchableOpacity>
-      )}
-
       <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.focusCard}>
           <View style={styles.focusTop}>
@@ -321,6 +316,26 @@ export default function TimerScreen({ navigation }) {
           <View style={styles.lockStateRow}>
             <Text style={styles.lockStateText}>{locked ? '强力锁机中' : bindLabel(isRunning, locked)}</Text>
             <Text style={styles.lockStateMeta}>{cfg.minutes} 分钟 · {countUp ? '自由记录' : '到点提醒'}</Text>
+          </View>
+          <View style={styles.examStrip}>
+            <TouchableOpacity style={styles.examCell} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.75}>
+              <Text style={styles.examText}>备考倒计时</Text>
+              <Text style={styles.examStrong}>{cdDays !== null ? `还有 ${cdDays} 天` : '未设置'}</Text>
+            </TouchableOpacity>
+            <View style={styles.examDivider} />
+            <TouchableOpacity style={styles.examCell} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.75}>
+              <Text style={styles.examText}>已备考</Text>
+              <Text style={styles.examStrong}>{cdStudied !== null ? `${cdStudied} 天` : '--'}</Text>
+            </TouchableOpacity>
+            <View style={styles.examDivider} />
+            <TouchableOpacity
+              style={styles.examCell}
+              onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.examText}>每日最低</Text>
+              <Text style={styles.examStrong}>{Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES)}′</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -351,6 +366,26 @@ export default function TimerScreen({ navigation }) {
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>科目</Text>
           <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
+        </View>
+
+        <View style={styles.panel}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>下一项</Text>
+            <Text style={styles.panelAction}>每日计划</Text>
+          </View>
+          {nextPlanItem ? (
+            <View style={styles.nextRow}>
+              <View style={styles.nextTime}>
+                <Text style={styles.nextTimeText}>{nextPlanItem.start}</Text>
+              </View>
+              <View style={[styles.nextMain, { borderLeftColor: nextPlanItem.color }]}>
+                <Text style={styles.nextName}>{nextPlanItem.icon} {nextPlanItem.name}</Text>
+                <Text style={styles.nextMeta}>{nextPlanItem.end || '待定'} 结束 · 建议绑定锁机</Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.nextEmpty}>今天后面暂无计划</Text>
+          )}
         </View>
 
         <View style={styles.quickActions}>
@@ -532,6 +567,22 @@ function bindLabel(isRunning, locked) {
   return '准备开始';
 }
 
+function findNextPlanItem(plan) {
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const sorted = [...(plan || [])].sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  const item = sorted.find(p => {
+    if (!p.start) return false;
+    const [h, m] = p.start.split(':').map(Number);
+    return h * 60 + m > nowMin;
+  });
+  if (!item) return null;
+  const subj = item.customName
+    ? { icon: '📝', name: item.customName, color: COLORS.accent }
+    : SUBJECTS[item.subject] || { icon: '📚', name: '学习', color: COLORS.accent };
+  return { ...item, ...subj };
+}
+
 function Metric({ value, label }) {
   return (
     <View style={styles.metric}>
@@ -542,11 +593,11 @@ function Metric({ value, label }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1 },
+  wrap: { flex: 1, backgroundColor: '#0d0f1a' },
   bodyScroll: { flex: 1 },
-  body: { paddingTop: 112, paddingHorizontal: 16, paddingBottom: 32 },
-  hd: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 8 },
-  cdBar: { position: 'absolute', top: Platform.OS === 'android' ? 88 : 100, left: 0, right: 0, zIndex: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 20, backgroundColor: 'rgba(255,107,107,0.08)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,107,107,0.12)' },
+  body: { paddingHorizontal: 16, paddingBottom: 32 },
+  hd: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 12 },
+  cdBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 20, backgroundColor: 'rgba(255,107,107,0.08)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,107,107,0.12)' },
   cdBarText: { fontSize: 12, color: 'rgba(255,180,180,0.85)', fontWeight: '600', letterSpacing: 0.3 },
   cdArrow: { fontSize: 14, color: 'rgba(255,180,180,0.5)', marginLeft: 6 },
   timerWrap: { marginVertical: 8, alignItems: 'center' },
@@ -554,7 +605,7 @@ const styles = StyleSheet.create({
   ttl: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   sb: { backgroundColor: '#e74c3c', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
   sbt: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  focusCard: { backgroundColor: COLORS.card, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  focusCard: { backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   focusKicker: { color: COLORS.text2, fontSize: 12, fontWeight: '700' },
   focusSubject: { color: COLORS.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
@@ -563,15 +614,27 @@ const styles = StyleSheet.create({
   lockStateRow: { alignItems: 'center', paddingTop: 4 },
   lockStateText: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
   lockStateMeta: { color: COLORS.text2, fontSize: 11, marginTop: 4 },
+  examStrip: { marginTop: 14, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 16, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  examCell: { flex: 1, alignItems: 'center' },
+  examText: { color: COLORS.text2, fontSize: 10, fontWeight: '800', marginBottom: 5 },
+  examStrong: { color: COLORS.text, fontSize: 14, fontWeight: '900' },
+  examDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.09)' },
   metricRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  metric: { flex: 1, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border },
+  metric: { flex: 1, backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   metricValue: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
   metricLabel: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 5 },
-  panel: { backgroundColor: COLORS.card, borderRadius: 16, padding: 12, marginTop: 10, borderWidth: 1, borderColor: COLORS.border },
+  panel: { backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 16, padding: 12, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   panelTitle: { color: COLORS.text2, fontSize: 12, fontWeight: '800', marginBottom: 8 },
   panelAction: { color: COLORS.accent, fontSize: 12, fontWeight: '800' },
   quickActions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 },
+  nextRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  nextTime: { width: 54, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  nextTimeText: { color: COLORS.text, fontSize: 13, fontWeight: '900' },
+  nextMain: { flex: 1, borderLeftWidth: 3, paddingLeft: 10, justifyContent: 'center' },
+  nextName: { color: COLORS.text, fontSize: 14, fontWeight: '900' },
+  nextMeta: { color: COLORS.text2, fontSize: 11, fontWeight: '700', marginTop: 5 },
+  nextEmpty: { color: COLORS.text2, fontSize: 12, textAlign: 'center', paddingVertical: 10 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: COLORS.card, borderRadius: 16 },
   toggleT: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   toggleHint: { fontSize: 11, color: COLORS.text2 },

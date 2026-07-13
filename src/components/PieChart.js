@@ -1,23 +1,33 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Line, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { SUBJECTS, COLORS } from '../constants';
 import { formatDuration } from '../storage';
 
-// viewBox 比绘图区更宽，给左右标签留出文字空间（避免引出线标签出屏被裁切）。
-// 标签字号调大了，所以把 viewBox 再加宽并缩短引出线，确保文字仍落在框内不出屏。
-const VB_W = 500;
-const VB_H = 300;
-const CX = VB_W / 2;   // 250
-const CY = VB_H / 2;   // 150
-const OUTER_R = 88;
-const INNER_R = 56;    // donut hole
-const LABEL_LINE = 20; // 引出线斜段长度
-const LABEL_EXT = 28;  // 引出线水平段长度
+const SIZE = 220;
+const CX = SIZE / 2;
+const CY = SIZE / 2;
+const OUTER_R = 86;
+const INNER_R = 58;
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function donutPath(startA, endA) {
+  const outerStart = polarToXY(CX, CY, OUTER_R, endA);
+  const outerEnd = polarToXY(CX, CY, OUTER_R, startA);
+  const innerStart = polarToXY(CX, CY, INNER_R, endA);
+  const innerEnd = polarToXY(CX, CY, INNER_R, startA);
+  const large = endA - startA > 180 ? 1 : 0;
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${OUTER_R} ${OUTER_R} 0 ${large} 0 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerEnd.x} ${innerEnd.y}`,
+    `A ${INNER_R} ${INNER_R} 0 ${large} 1 ${innerStart.x} ${innerStart.y}`,
+    'Z',
+  ].join(' ');
 }
 
 export default function PieChart({ data, totalSec }) {
@@ -27,7 +37,8 @@ export default function PieChart({ data, totalSec }) {
       ...subj,
       seconds: data[key] || 0,
     }))
-    .filter(e => e.seconds > 0);
+    .filter(e => e.seconds > 0)
+    .sort((a, b) => b.seconds - a.seconds);
 
   if (entries.length === 0 || !totalSec) {
     return (
@@ -38,125 +49,65 @@ export default function PieChart({ data, totalSec }) {
     );
   }
 
-  // Build arcs
   let currentAngle = 0;
   const slices = entries.map(entry => {
     const angle = (entry.seconds / totalSec) * 360;
-    const midAngle = currentAngle + angle / 2;
     const pct = Math.round((entry.seconds / totalSec) * 100);
     const slice = {
       ...entry,
-      startAngle: currentAngle,
-      // 留极小缝隙，避免单科 100% 时首尾相接导致整圈不渲染
-      endAngle: currentAngle + (angle >= 360 ? 359.999 : angle),
-      midAngle,
       pct,
+      startAngle: currentAngle,
+      endAngle: currentAngle + (angle >= 360 ? 359.999 : Math.max(angle - 1.2, 0.5)),
     };
     currentAngle += angle;
     return slice;
   });
 
-  // Donut path: outer arc + line to inner arc + inner arc reverse
-  const donutPath = (startA, endA) => {
-    const outerStart = polarToXY(CX, CY, OUTER_R, endA);
-    const outerEnd = polarToXY(CX, CY, OUTER_R, startA);
-    const innerStart = polarToXY(CX, CY, INNER_R, endA);
-    const innerEnd = polarToXY(CX, CY, INNER_R, startA);
-    const large = endA - startA > 180 ? 1 : 0;
-    return [
-      `M ${outerStart.x} ${outerStart.y}`,
-      `A ${OUTER_R} ${OUTER_R} 0 ${large} 0 ${outerEnd.x} ${outerEnd.y}`,
-      `L ${innerEnd.x} ${innerEnd.y}`,
-      `A ${INNER_R} ${INNER_R} 0 ${large} 1 ${innerStart.x} ${innerStart.y}`,
-      'Z',
-    ].join(' ');
-  };
-
-  // 引出线端点（线已缩短，标签靠近圆环，留在 viewBox 内）
-  const getLeaderPoints = (midAngle) => {
-    const start = polarToXY(CX, CY, OUTER_R + 3, midAngle);
-    const lineEnd = polarToXY(CX, CY, OUTER_R + LABEL_LINE, midAngle);
-    const isRight = midAngle <= 180;
-    const extX = isRight ? lineEnd.x + LABEL_EXT : lineEnd.x - LABEL_EXT;
-    return {
-      lineStart: start,
-      lineBend: lineEnd,
-      labelX: extX,
-      labelY: lineEnd.y,
-      textAnchor: isRight ? 'start' : 'end',
-    };
-  };
-
   return (
     <View style={styles.container}>
-      <Svg width={390} height={234} viewBox={`0 0 ${VB_W} ${VB_H}`}>
-        {/* Slices */}
-        {slices.map(slice => (
+      <View style={styles.chartWrap}>
+        <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
           <Path
-            key={slice.key}
-            d={donutPath(slice.startAngle, slice.endAngle)}
-            fill={slice.color}
-            opacity={0.9}
+            d={donutPath(0, 359.999)}
+            fill="rgba(255,255,255,0.08)"
           />
+          {slices.map(slice => (
+            <Path
+              key={slice.key}
+              d={donutPath(slice.startAngle, slice.endAngle)}
+              fill={slice.color}
+              opacity={0.96}
+            />
+          ))}
+          <SvgText
+            x={CX} y={CY - 4}
+            fill={COLORS.text} fontSize="20" fontWeight="800"
+            textAnchor="middle"
+          >
+            {formatDuration(totalSec)}
+          </SvgText>
+          <SvgText
+            x={CX} y={CY + 17}
+            fill={COLORS.text2} fontSize="12" fontWeight="600"
+            textAnchor="middle"
+          >
+            总计
+          </SvgText>
+        </Svg>
+      </View>
+
+      <View style={styles.legend}>
+        {slices.map(slice => (
+          <View key={`legend-${slice.key}`} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
+            <View style={styles.legendMain}>
+              <Text style={styles.legendName} numberOfLines={1}>{slice.icon} {slice.name}</Text>
+              <Text style={styles.legendTime}>{formatDuration(slice.seconds)}</Text>
+            </View>
+            <Text style={styles.legendPct}>{slice.pct}%</Text>
+          </View>
         ))}
-
-        {/* Leader lines + labels */}
-        {slices.map(slice => {
-          const pts = getLeaderPoints(slice.midAngle);
-          const textX = pts.labelX + (pts.textAnchor === 'start' ? 5 : -5);
-          return (
-            <G key={`label-${slice.key}`}>
-              <Line
-                x1={pts.lineStart.x} y1={pts.lineStart.y}
-                x2={pts.lineBend.x} y2={pts.lineBend.y}
-                stroke={COLORS.text2} strokeWidth={1} opacity={0.6}
-              />
-              <Line
-                x1={pts.lineBend.x} y1={pts.lineBend.y}
-                x2={pts.labelX} y2={pts.labelY}
-                stroke={COLORS.text2} strokeWidth={1} opacity={0.6}
-              />
-              {/* 切片边缘小圆点 */}
-              <Path
-                d={`M ${pts.lineStart.x - 3} ${pts.lineStart.y}
-                    A 3 3 0 1 1 ${pts.lineStart.x + 3} ${pts.lineStart.y}
-                    A 3 3 0 1 1 ${pts.lineStart.x - 3} ${pts.lineStart.y}`}
-                fill={slice.color}
-              />
-              <SvgText
-                x={textX} y={pts.labelY - 6}
-                fill={COLORS.text} fontSize="16" fontWeight="700"
-                textAnchor={pts.textAnchor}
-              >
-                {slice.icon} {slice.name}
-              </SvgText>
-              <SvgText
-                x={textX} y={pts.labelY + 11}
-                fill={COLORS.text2} fontSize="13"
-                textAnchor={pts.textAnchor}
-              >
-                {formatDuration(slice.seconds)} · {slice.pct}%
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* Center total */}
-        <SvgText
-          x={CX} y={CY - 5}
-          fill={COLORS.text} fontSize="19" fontWeight="700"
-          textAnchor="middle"
-        >
-          {formatDuration(totalSec)}
-        </SvgText>
-        <SvgText
-          x={CX} y={CY + 14}
-          fill={COLORS.text2} fontSize="12"
-          textAnchor="middle"
-        >
-          总计
-        </SvgText>
-      </Svg>
+      </View>
     </View>
   );
 }
@@ -165,6 +116,58 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+  },
+  chartWrap: {
+    width: SIZE,
+    height: SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legend: {
+    width: '100%',
+    paddingHorizontal: 18,
+    marginTop: 2,
+    rowGap: 8,
+  },
+  legendItem: {
+    minHeight: 44,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  legendName: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  legendTime: {
+    color: COLORS.text2,
+    fontSize: 10,
+    marginTop: 3,
+    fontWeight: '700',
+  },
+  legendPct: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 38,
+    textAlign: 'right',
   },
   empty: {
     alignItems: 'center',
