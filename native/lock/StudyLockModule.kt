@@ -1,6 +1,8 @@
 package com.kaoyan.studytimer.lock
 
 import android.app.admin.DevicePolicyManager
+import android.os.Build
+import android.os.PowerManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -14,6 +16,26 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     private val comp get() = ComponentName(reactApplicationContext, StudyDeviceAdminReceiver::class.java)
 
     @ReactMethod fun isAdmin(p: Promise) { p.resolve(dpm.isAdminActive(comp)) }
+
+    @ReactMethod fun isLockActive(p: Promise) {
+        val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+        val active = prefs.getBoolean("lock_active", false)
+        StudyAccessibilityService.lockActive = active
+        p.resolve(active)
+    }
+
+    @ReactMethod fun isIgnoringBatteryOptimizations(p: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                p.resolve(true)
+                return
+            }
+            val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            p.resolve(pm.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
+        } catch (_: Exception) {
+            p.resolve(false)
+        }
+    }
 
     @ReactMethod fun showDynamicIsland(title: String, body: String, promise: Promise) {
         try {

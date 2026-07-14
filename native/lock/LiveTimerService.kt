@@ -62,12 +62,12 @@ class LiveTimerService : Service() {
     // 这里保持 PUBLIC，让系统决定是否展示；不在解锁/亮屏瞬间重发，避免流体云弹窗打断用户。
     private var screenOn = true
 
-    // 不做每秒刷新：系统 chronometer 自走；这里仅每分钟校准一次 ProgressStyle/兜底文本，并检查到点退出。
+    // 系统 chronometer 负责真正的倒计时；同时每秒静默校准一次标题/短文本，兼容只读取首帧文本的 ROM 胶囊。
     private val ticker = object : Runnable {
         override fun run() {
             if (endAt - System.currentTimeMillis() <= 0) { stopSelf(); return }
-            if (screenOn) repost()
-            handler.postDelayed(this, 60_000)
+            repost()
+            handler.postDelayed(this, if (screenOn) 1_000 else 15_000)
         }
     }
 
@@ -82,7 +82,7 @@ class LiveTimerService : Service() {
                     if (screenOn) return
                     screenOn = true
                     handler.removeCallbacks(ticker)
-                    handler.postDelayed(ticker, 60_000)
+                    handler.post(ticker)
                 }
             }
         }
@@ -126,9 +126,8 @@ class LiveTimerService : Service() {
         handler.removeCallbacks(ticker)
         // 启动阶段轻推两次：部分 ROM(ColorOS/HyperOS) 要等通知第一次"被更新"才晋升成胶囊。
         // 只在刚开始时做，之后不靠解锁/窗口变化重发，避免流体云反复弹出。
-        handler.postDelayed({ repost() }, 300)
-        handler.postDelayed({ repost() }, 1500)
-        handler.postDelayed(ticker, 60_000)
+        handler.postDelayed({ repost() }, 120)
+        handler.postDelayed(ticker, 1_000)
         // 被系统杀掉不自动重启（结束提醒由 TimerAlarm 的 setAlarmClock 负责，互不依赖）
         return START_NOT_STICKY
     }
@@ -152,9 +151,11 @@ class LiveTimerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
         val remainingText = formatRemaining(remainingMs)
+        val endText = formatEndClock(endAt)
         val b = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("剩余 $remainingText")
-            .setContentText("$title · ${formatEndClock(endAt)} 结束")
+            .setContentText("$title · $endText 结束")
+            .setSubText(title)
             .setSmallIcon(smallIconRes())
             .setOngoing(true)
             .setOnlyAlertOnce(true)

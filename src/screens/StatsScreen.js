@@ -6,6 +6,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PieChart from '../components/PieChart';
+import DefaultBackdrop from '../components/DefaultBackdrop';
 
 import { SUBJECTS, COLORS, DEFAULT_GOAL_MINUTES } from '../constants';
 import { useBg } from '../../App';
@@ -242,7 +243,8 @@ export default function StatsScreen() {
   const maxWeekSec = Math.max(1, ...weekData.map(d => d.total_sec));
 
   return (
-    <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+      {!bgUri && <DefaultBackdrop />}
       <View style={styles.header}>
         <Text style={styles.title}>📊 学习统计 · {sessionsTotal}次</Text>
         <TouchableOpacity style={styles.manualBtn} onPress={() => setShowManual(true)}>

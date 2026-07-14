@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { SUBJECTS, COLORS } from '../constants';
 import { useBg } from '../../App';
 import { syncPlanNotifications } from '../notify';
+import DefaultBackdrop from '../components/DefaultBackdrop';
 
 const STORAGE_KEY = 'daily_plan';
 
@@ -73,7 +74,8 @@ export default function ScheduleScreen() {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+      {!bgUri && <DefaultBackdrop />}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>今日计划</Text>

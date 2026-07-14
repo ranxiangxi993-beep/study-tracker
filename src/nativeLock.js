@@ -8,6 +8,16 @@ export async function isDeviceAdminActive() {
   try { return await L.isAdmin(); } catch (e) { return false; }
 }
 
+export async function isLockActive() {
+  if (!L?.isLockActive) return false;
+  try { return await L.isLockActive(); } catch (e) { return false; }
+}
+
+export async function isIgnoringBatteryOptimizations() {
+  if (!L?.isIgnoringBatteryOptimizations) return false;
+  try { return await L.isIgnoringBatteryOptimizations(); } catch (e) { return false; }
+}
+
 export async function requestDeviceAdmin() {
   if (!L?.requestAdmin) return false;
   try { await L.requestAdmin(); return true; } catch (e) { return false; }

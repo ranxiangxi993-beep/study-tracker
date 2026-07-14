@@ -10,11 +10,12 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
 import TimerCircle from '../components/TimerCircle';
 import SubjectSelector from '../components/SubjectSelector';
+import DefaultBackdrop from '../components/DefaultBackdrop';
 import { SUBJECTS, TIMER_MODES, COLORS, DEFAULT_GOAL_MINUTES, APP_VERSION_NAME, APP_VERSION_CODE } from '../constants';
 import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
 import { useBg } from '../../App';
 import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, openFullScreenIntentSettings, startLiveTimer, stopLiveTimer } from '../notify';
-import { isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
+import { isAccessibilityEnabled, isAccessibilitySettingOn, isLockActive, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
 import { nextQuote } from '../quotes';
 
 export default function TimerScreen({ navigation }) {
@@ -40,6 +41,9 @@ export default function TimerScreen({ navigation }) {
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
   const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
   const [dailyGoalMin, setDailyGoalMin] = useState(String(DEFAULT_GOAL_MINUTES));
+  const [dailyGoalHours, setDailyGoalHours] = useState(String(Math.round((DEFAULT_GOAL_MINUTES / 60) * 10) / 10));
+  const [lockLevel, setLockLevel] = useState('strong');
+  const [bindStudyLock, setBindStudyLock] = useState(true);
   const [cdDays, setCdDays] = useState(null);
   const [cdStudied, setCdStudied] = useState(null);
   const [todayStats, setTodayStats] = useState({});
@@ -85,6 +89,9 @@ export default function TimerScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       getTodayStats().then(setTodayStats);
+      isLockActive().then(setLocked);
+      AsyncStorage.getItem('lock_level').then(v => { if (v) setLockLevel(v); });
+      AsyncStorage.getItem('lock_bind_study').then(v => { if (v !== null) setBindStudyLock(v === '1'); });
       AsyncStorage.getItem('daily_plan').then(data => {
         const plan = data ? JSON.parse(data) : [];
         setNextPlanItem(findNextPlanItem(plan));
@@ -133,6 +140,18 @@ export default function TimerScreen({ navigation }) {
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
     const elapsedAtStart = isPaused ? pausedMsRef.current : 0;
+    if (!isPaused && mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+      const active = await isLockActive();
+      if (!active) {
+        const hasAcc = await isAccessibilityEnabled();
+        if (hasAcc) {
+          const result = await lockScreen();
+          if (result !== 'none' && result !== 'error') setLocked(true);
+        }
+      } else {
+        setLocked(true);
+      }
+    }
     if (!isPaused) {
       if (mode === 'work') { const id = await startSession(activeSubject); setSessionId(id); sessionIdRef.current = id; }
       startTimeRef.current = Date.now();
@@ -157,7 +176,7 @@ export default function TimerScreen({ navigation }) {
     clearInterval(timerRef.current);
     timerRef.current = setInterval(updateDisplay, 200);
     updateDisplay();
-  }, [isRunning, isPaused, mode, activeSubject, countUp, updateDisplay]);
+  }, [isRunning, isPaused, mode, activeSubject, countUp, updateDisplay, bindStudyLock, lockLevel]);
 
   const doPause = useCallback(() => {
     setIsPaused(true); clearInterval(timerRef.current);
@@ -207,10 +226,12 @@ export default function TimerScreen({ navigation }) {
     const w = Math.max(1, parseInt(editMin.work) || 25);
     const s = Math.max(1, parseInt(editMin.short) || 5);
     const l = Math.max(1, parseInt(editMin.long) || 15);
-    const goal = Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES);
+    const goalHours = Math.max(0.5, parseFloat(String(dailyGoalHours).replace(',', '.')) || (DEFAULT_GOAL_MINUTES / 60));
+    const goal = Math.max(30, Math.round(goalHours * 60));
     setCustomMin({ work: w, short: s, long: l });
     await AsyncStorage.setItem('custom_durations', JSON.stringify({ work: w, short: s, long: l }));
     setDailyGoalMin(String(goal));
+    setDailyGoalHours(String(Math.round((goal / 60) * 10) / 10));
     await AsyncStorage.setItem('daily_goal_minutes', String(goal));
     if (!isRunning) { setTimeLeft(countUp ? 0 : w * 60); setTotalTime(w * 60); }
   };
@@ -269,8 +290,14 @@ export default function TimerScreen({ navigation }) {
       });
     });
     AsyncStorage.getItem('daily_goal_minutes').then(v => {
-      if (v) setDailyGoalMin(v);
+      if (v) {
+        setDailyGoalMin(v);
+        setDailyGoalHours(String(Math.round(((parseInt(v) || DEFAULT_GOAL_MINUTES) / 60) * 10) / 10));
+      }
     });
+    AsyncStorage.getItem('lock_level').then(v => { if (v) setLockLevel(v); });
+    AsyncStorage.getItem('lock_bind_study').then(v => { if (v !== null) setBindStudyLock(v === '1'); });
+    isLockActive().then(setLocked);
     AsyncStorage.getItem('accent_color').then(c => { if (c) setAccentColor(c); });
     AsyncStorage.getItem('break_colors').then(d => { if (d) setBreakColors(JSON.parse(d)); });
     AsyncStorage.getItem('wl_pkgs').then(d => { if (d) setWlPkgs(JSON.parse(d)); });
@@ -290,7 +317,8 @@ export default function TimerScreen({ navigation }) {
   const ringProgress = cfgSec > 0 ? Math.min(1, Math.max(0, timeLeft) / cfgSec) : 0;
 
   return (
-    <View style={[styles.wrap, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
+    <View style={[styles.wrap, { backgroundColor: 'transparent' }]}>
+      {!bgUri && <DefaultBackdrop />}
       <View style={styles.hd}>
         <TouchableOpacity onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
           <Text style={styles.gear}>⚙️</Text>
@@ -334,7 +362,7 @@ export default function TimerScreen({ navigation }) {
               activeOpacity={0.75}
             >
               <Text style={styles.examText}>每日最低</Text>
-              <Text style={styles.examStrong}>{Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES)}′</Text>
+              <Text style={styles.examStrong}>{formatGoalHours(dailyGoalMin)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -342,7 +370,7 @@ export default function TimerScreen({ navigation }) {
         <View style={styles.metricRow}>
           <Metric value={formatDuration(todayTotal)} label="今日已学" />
           <Metric value={`${goalPct}%`} label="目标进度" />
-          <Metric value={locked ? '已开' : '待开'} label="专注锁" />
+          <Metric value={locked ? '已开' : (bindStudyLock && lockLevel === 'strong' ? '学习即开' : '待开')} label="专注锁" />
         </View>
 
         <View style={styles.panel}>
@@ -468,13 +496,14 @@ export default function TimerScreen({ navigation }) {
                 <TouchableOpacity onPress={() => setEditMin(p => ({ ...p, [item.f]: String((parseInt(p[item.f])||1)+5) }))}><Text style={styles.db}>+5</Text></TouchableOpacity>
               </View>
             ))}
-            <Text style={[styles.lbl, { marginTop: 10 }]}>🎯 每日最低学习时长（分钟）</Text>
+            <Text style={[styles.lbl, { marginTop: 10 }]}>🎯 每日最低学习时长（小时）</Text>
             <View style={styles.dr}>
               <Text style={styles.dl}>热力图达标线</Text>
-              <TouchableOpacity onPress={() => setDailyGoalMin(p => String(Math.max(1, (parseInt(p) || DEFAULT_GOAL_MINUTES) - 30)))}><Text style={styles.db}>−30</Text></TouchableOpacity>
-              <TextInput style={styles.di} keyboardType="numeric" value={dailyGoalMin} onChangeText={setDailyGoalMin} />
-              <TouchableOpacity onPress={() => setDailyGoalMin(p => String((parseInt(p) || DEFAULT_GOAL_MINUTES) + 30))}><Text style={styles.db}>+30</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setDailyGoalHours(p => String(Math.max(0.5, Math.round(((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) - 0.5) * 10) / 10)))}><Text style={styles.db}>−0.5</Text></TouchableOpacity>
+              <TextInput style={styles.di} keyboardType="decimal-pad" value={dailyGoalHours} onChangeText={setDailyGoalHours} />
+              <TouchableOpacity onPress={() => setDailyGoalHours(p => String(Math.round(((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) + 0.5) * 10) / 10))}><Text style={styles.db}>+0.5</Text></TouchableOpacity>
             </View>
+            <Text style={styles.goalHint}>当前等于 {Math.max(30, Math.round((parseFloat(String(dailyGoalHours).replace(',', '.')) || DEFAULT_GOAL_MINUTES / 60) * 60))} 分钟，热力图按这个达标线变色。</Text>
             <TouchableOpacity style={styles.sv} onPress={() => { saveDurations(); setShowSettings(false); }}><Text style={styles.svT}>保存设置</Text></TouchableOpacity>
 
             <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 学习圆环色</Text>
@@ -565,6 +594,12 @@ function bindLabel(isRunning, locked) {
   if (locked) return '锁机已绑定';
   if (isRunning) return '建议开启锁机';
   return '准备开始';
+}
+
+function formatGoalHours(minValue) {
+  const minutes = Math.max(1, parseInt(minValue) || DEFAULT_GOAL_MINUTES);
+  const hours = minutes / 60;
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 }
 
 function findNextPlanItem(plan) {
@@ -661,6 +696,7 @@ const styles = StyleSheet.create({
   dl: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.text },
   db: { fontSize: 16, fontWeight: '700', color: COLORS.accent, paddingHorizontal: 8 },
   di: { backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, fontSize: 18, fontWeight: '700', color: COLORS.text, textAlign: 'center', width: 60, borderWidth: 1, borderColor: COLORS.card2 },
+  goalHint: { color: COLORS.text2, fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 10 },
   sv: { backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: 12, alignItems: 'center', marginTop: 6 },
   svT: { color: '#fff', fontSize: 14, fontWeight: '600' },
   prev: { width: '100%', height: 120, borderRadius: 12, marginBottom: 8 },

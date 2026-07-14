@@ -6,8 +6,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../constants';
 import { useBg } from '../../App';
+import DefaultBackdrop from '../components/DefaultBackdrop';
 import {
-  isAccessibilityEnabled, isAccessibilitySettingOn, openAccessibilitySettings,
+  isAccessibilityEnabled, isAccessibilitySettingOn, isIgnoringBatteryOptimizations, isLockActive, openAccessibilitySettings,
   openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen,
   getInstalledApps, saveWhitelist,
 } from '../nativeLock';
@@ -22,6 +23,8 @@ export default function LockScreen() {
   const { bgUri } = useBg();
   const [accessOn, setAccessOn] = useState(false);
   const [settingOn, setSettingOn] = useState(false);
+  const [batteryOk, setBatteryOk] = useState(false);
+  const [autostartConfirmed, setAutostartConfirmed] = useState(false);
   const [locked, setLocked] = useState(false);
   const [level, setLevel] = useState('strong');
   const [bindStudy, setBindStudy] = useState(true);
@@ -32,13 +35,25 @@ export default function LockScreen() {
   const [loadingApps, setLoadingApps] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [enabled, setting] = await Promise.all([
+    const [enabled, setting, active, battery, savedAuto, savedLevel, savedBind, savedBreak] = await Promise.all([
       isAccessibilityEnabled(),
       isAccessibilitySettingOn(),
+      isLockActive(),
+      isIgnoringBatteryOptimizations(),
+      AsyncStorage.getItem('lock_autostart_confirmed'),
+      AsyncStorage.getItem('lock_level'),
+      AsyncStorage.getItem('lock_bind_study'),
+      AsyncStorage.getItem('lock_break_relax'),
     ]);
     const saved = JSON.parse((await AsyncStorage.getItem('wl_pkgs')) || '[]');
     setAccessOn(!!enabled);
     setSettingOn(!!setting);
+    setLocked(!!active);
+    setBatteryOk(!!battery);
+    setAutostartConfirmed(savedAuto === '1');
+    if (savedLevel) setLevel(savedLevel);
+    if (savedBind !== null) setBindStudy(savedBind === '1');
+    if (savedBreak !== null) setBreakRelax(savedBreak === '1');
     setWlPkgs(saved);
   }, []);
 
@@ -107,12 +122,19 @@ export default function LockScreen() {
   const permissionRows = [
     { label: '无障碍服务', ok: accessOn, action: openAccessibilitySettings },
     { label: '系统开关状态', ok: settingOn, action: openAccessibilitySettings },
-    { label: '电池优化', ok: false, warn: true, action: openBatterySettings },
-    { label: '自启动 / 后台', ok: false, warn: true, action: openWhiteListSettings },
+    { label: '电池优化', ok: batteryOk, warn: !batteryOk, action: openBatterySettings, state: batteryOk ? '已忽略优化' : '建议关闭' },
+    {
+      label: '自启动 / 后台',
+      ok: autostartConfirmed,
+      warn: !autostartConfirmed,
+      action: openWhiteListSettings,
+      state: autostartConfirmed ? '已确认' : '需手动确认',
+    },
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: bgUri ? 'transparent' : COLORS.bg }]}>
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+      {!bgUri && <DefaultBackdrop />}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>专注锁</Text>
@@ -147,7 +169,7 @@ export default function LockScreen() {
               <TouchableOpacity
                 key={item.key}
                 style={[styles.level, level === item.key && styles.levelOn]}
-                onPress={() => setLevel(item.key)}
+                onPress={async () => { setLevel(item.key); await AsyncStorage.setItem('lock_level', item.key); }}
               >
                 <Text style={[styles.levelLabel, level === item.key && styles.levelLabelOn]}>{item.label}</Text>
                 <Text style={styles.levelDesc}>{item.desc}</Text>
@@ -164,15 +186,33 @@ export default function LockScreen() {
                 <Text style={styles.checkMark}>{row.ok ? '✓' : row.warn ? '!' : '×'}</Text>
               </View>
               <Text style={styles.checkLabel}>{row.label}</Text>
-              <Text style={styles.checkState}>{row.ok ? '正常' : row.warn ? '建议设置' : '未开启'}</Text>
+              <Text style={styles.checkState}>{row.state || (row.ok ? '正常' : row.warn ? '建议设置' : '未开启')}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            style={styles.confirmAuto}
+            onPress={async () => {
+              const next = !autostartConfirmed;
+              setAutostartConfirmed(next);
+              await AsyncStorage.setItem('lock_autostart_confirmed', next ? '1' : '0');
+            }}
+          >
+            <Text style={styles.confirmAutoText}>{autostartConfirmed ? '撤销自启动确认' : '我已在系统里开启自启动/后台运行'}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>规则</Text>
-          <ToggleRow title="绑定学习段" desc="开始学习时自动进入锁机策略。" value={bindStudy} onPress={() => setBindStudy(v => !v)} />
-          <ToggleRow title="休息段放松" desc="休息时允许临时离开学习工具。" value={breakRelax} onPress={() => setBreakRelax(v => !v)} />
+          <ToggleRow title="绑定学习段" desc="开始学习时自动进入锁机策略。" value={bindStudy} onPress={async () => {
+            const next = !bindStudy;
+            setBindStudy(next);
+            await AsyncStorage.setItem('lock_bind_study', next ? '1' : '0');
+          }} />
+          <ToggleRow title="休息段放松" desc="休息时允许临时离开学习工具。" value={breakRelax} onPress={async () => {
+            const next = !breakRelax;
+            setBreakRelax(next);
+            await AsyncStorage.setItem('lock_break_relax', next ? '1' : '0');
+          }} />
           <TouchableOpacity style={styles.manageRow} onPress={openApps}>
             <View>
               <Text style={styles.manageTitle}>白名单应用</Text>
@@ -269,6 +309,8 @@ const styles = StyleSheet.create({
   checkMark: { color: '#fff', fontSize: 12, fontWeight: '900' },
   checkLabel: { flex: 1, color: COLORS.text, fontSize: 13, fontWeight: '700' },
   checkState: { color: COLORS.text2, fontSize: 11 },
+  confirmAuto: { marginTop: 10, borderRadius: 12, paddingVertical: 10, alignItems: 'center', backgroundColor: COLORS.card2, borderWidth: 1, borderColor: COLORS.border },
+  confirmAutoText: { color: COLORS.text, fontSize: 12, fontWeight: '800' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   toggleTitle: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
   toggleDesc: { color: COLORS.text2, fontSize: 11, marginTop: 4, lineHeight: 16 },

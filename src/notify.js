@@ -55,6 +55,7 @@ const OLD_CHANNEL_IDS = ['study-reminders'];
 const PLAN_IDS_KEY = 'plan_notif_ids';
 const PLAN_NOTIFICATION_KIND = 'daily-plan-reminder';
 const PLAN_NOTIFICATION_TITLE = '📅 即将开始';
+const OLD_PLAN_TITLE_KEYWORDS = ['即将开始', '学习提醒', '学习计划', '日程提醒'];
 
 // 前台收到通知时也弹出横幅(否则前台默认静默)
 Notifications.setNotificationHandler({
@@ -190,14 +191,21 @@ async function cancelExistingPlanNotifications() {
   const oldIds = JSON.parse((await AsyncStorage.getItem(PLAN_IDS_KEY)) || '[]');
   const ids = new Set(oldIds.filter(Boolean));
 
-  // 兼容旧版本：早期只把 id 存在 AsyncStorage 里；如果并发同步或升级导致 id 丢失，
-  // 这里按通知内容再扫一遍，清掉所有日程开始提醒，避免每天重复弹。
+  // 兼容旧版本：早期可能排过"开始前 3 分钟"、"开始前 2 分钟"等多套 daily 通知，
+  // 且旧通知没有 data.kind。日程提醒是本 app 唯一 daily/repeating 通知，所以这里直接
+  // 清掉所有 daily/repeating 计划项，再只按当前规则重建一套，避免 7:57、7:58 连续弹。
   if (Notifications.getAllScheduledNotificationsAsync) {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of scheduled || []) {
       const title = n?.content?.title;
       const kind = n?.content?.data?.kind;
-      if (kind === PLAN_NOTIFICATION_KIND || title === PLAN_NOTIFICATION_TITLE || title?.includes?.('即将开始')) {
+      const trigger = n?.trigger || {};
+      const isDaily =
+        trigger?.type === 'daily' ||
+        trigger?.repeats === true ||
+        (Number.isFinite(trigger?.hour) && Number.isFinite(trigger?.minute));
+      const looksLikePlan = OLD_PLAN_TITLE_KEYWORDS.some(k => title?.includes?.(k));
+      if (kind === PLAN_NOTIFICATION_KIND || isDaily || looksLikePlan) {
         ids.add(n.identifier);
       }
     }
