@@ -61,12 +61,19 @@ export default function TimerScreen({ navigation }) {
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const pausedMsRef = useRef(0);
+  const modesRef = useRef(modes);
+  useEffect(() => { modesRef.current = modes; }, [customMin]);
   const notifIdRef = useRef(null); // 预约的"计时结束"系统通知 id
   // sessionId 的镜像 ref：倒计时自然结束时，finish 是被 setInterval 里"旧的" updateDisplay
   // 闭包调用的，闭包里的 sessionId 可能还是启动前的 null（异步 setState 的经典陷阱），
   // 导致 stopSession 拿不到 id、时长记不进去。改成从 ref 读最新 id。
   const sessionIdRef = useRef(null);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  const timerStateRef = useRef({ isRunning: false, isPaused: false, countUp: false, mode: 'work', activeSubject: 'english' });
+  useEffect(() => {
+    timerStateRef.current = { isRunning, isPaused, countUp, mode, activeSubject };
+  }, [isRunning, isPaused, countUp, mode, activeSubject]);
+  const appStateRef = useRef(AppState.currentState);
 
   const getElapsed = useCallback(() => {
     if (!startTimeRef.current) return 0;
@@ -106,6 +113,10 @@ export default function TimerScreen({ navigation }) {
     // 在前台、后台还是息屏，倒计时结束都有一致的"微信式"提醒，不用一直盯着界面。
     notifIdRef.current = null;
     stopLiveTimer(); // 收起流体云实时胶囊（结束提醒由系统闹钟弹出）
+    if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+      await unlockScreen();
+      setLocked(false);
+    }
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
     // 自然结束=跑满本模式时长；封顶避免"后台/息屏超时很久才对账结束"把多余时间算进去
@@ -132,7 +143,24 @@ export default function TimerScreen({ navigation }) {
   const liveTitleRef = useRef(null);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') reconcileRef.current();
+      const prevState = appStateRef.current;
+      appStateRef.current = s;
+      if (s === 'active') {
+        reconcileRef.current();
+        const st = timerStateRef.current;
+        if (prevState === 'background' && st.isRunning && !st.isPaused && !st.countUp && startTimeRef.current) {
+          const remaining = modesRef.current[st.mode].minutes * 60 - getElapsed();
+          if (remaining > 0) {
+            const capsuleTitle = st.mode === 'work'
+              ? `📖 ${SUBJECTS[st.activeSubject]?.name || '学习'}`
+              : (st.mode === 'short' ? '☕ 短休' : '😴 长休');
+            liveTitleRef.current = capsuleTitle;
+            startLiveTimer(remaining, capsuleTitle);
+          }
+        }
+      } else if (s === 'background' || s === 'inactive') {
+        stopLiveTimer();
+      }
     });
     return () => sub.remove();
   }, []);
@@ -188,21 +216,28 @@ export default function TimerScreen({ navigation }) {
     clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
     cancelScheduled(notifIdRef.current); notifIdRef.current = null;
     stopLiveTimer();
+    if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+      await unlockScreen();
+      setLocked(false);
+    }
     // 暂停态结束→记暂停那一刻的学习秒数（pausedMsRef）；运行态→记当前已学秒数。均不含暂停挂起的时间。
     if (sessionId && mode === 'work') { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); getStreak().then(setStreak); }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
-  }, [mode, sessionId, customMin, countUp, isPaused, getElapsed]);
+  }, [mode, sessionId, customMin, countUp, isPaused, getElapsed, bindStudyLock, lockLevel]);
 
   const switchMode = useCallback((m) => {
     if (isRunning) { clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
       cancelScheduled(notifIdRef.current); notifIdRef.current = null;
       stopLiveTimer();
+      if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+        unlockScreen().then(() => setLocked(false));
+      }
       if (mode === 'work' && sessionId) { stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
     }
     setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
     startTimeRef.current = null;
-  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed]);
+  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed, bindStudyLock, lockLevel]);
 
   const handleSubject = useCallback((key) => {
     if (isRunning && mode === 'work') {
@@ -211,6 +246,10 @@ export default function TimerScreen({ navigation }) {
           if (sessionId) { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
           cancelScheduled(notifIdRef.current); notifIdRef.current = null;
           stopLiveTimer();
+          if (bindStudyLock && lockLevel === 'strong') {
+            await unlockScreen();
+            setLocked(false);
+          }
           clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
           setTimeLeft(countUp ? 0 : modes[mode].minutes * 60); setActiveSubject(key);
           startTimeRef.current = null;

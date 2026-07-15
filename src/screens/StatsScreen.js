@@ -71,6 +71,12 @@ function LegendDot({ color, label }) {
   );
 }
 
+function formatGoalHours(minutes) {
+  const min = Math.max(1, parseInt(minutes) || DEFAULT_GOAL_MINUTES);
+  const hours = min / 60;
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
+}
+
 const PERIODS = [
   { key: 'week',  label: '本周' },
   { key: 'month', label: '月度' },
@@ -274,7 +280,7 @@ export default function StatsScreen() {
             <Text style={styles.summaryLabel}>{periodLabel}总计</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{dailyGoalMin}′</Text>
+            <Text style={styles.summaryValue}>{formatGoalHours(dailyGoalMin)}</Text>
             <Text style={styles.summaryLabel}>每日最低</Text>
           </View>
           <View style={styles.summaryCard}>

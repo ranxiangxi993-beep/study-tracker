@@ -62,12 +62,13 @@ class LiveTimerService : Service() {
     // 这里保持 PUBLIC，让系统决定是否展示；不在解锁/亮屏瞬间重发，避免流体云弹窗打断用户。
     private var screenOn = true
 
-    // 系统 chronometer 负责真正的倒计时；同时每秒静默校准一次标题/短文本，兼容只读取首帧文本的 ROM 胶囊。
+    // 系统 chronometer 负责真正的倒计时。不要每秒 notify：ColorOS 会把每次 notify 当作流体云重贴，
+    // 解锁/亮屏时就会反复弹窗。这里只做分钟级兜底校准，避免干扰用户。
     private val ticker = object : Runnable {
         override fun run() {
             if (endAt - System.currentTimeMillis() <= 0) { stopSelf(); return }
             repost()
-            handler.postDelayed(this, if (screenOn) 1_000 else 15_000)
+            handler.postDelayed(this, 60_000)
         }
     }
 
@@ -82,7 +83,7 @@ class LiveTimerService : Service() {
                     if (screenOn) return
                     screenOn = true
                     handler.removeCallbacks(ticker)
-                    handler.post(ticker)
+                    handler.postDelayed(ticker, 60_000)
                 }
             }
         }
@@ -127,7 +128,7 @@ class LiveTimerService : Service() {
         // 启动阶段轻推两次：部分 ROM(ColorOS/HyperOS) 要等通知第一次"被更新"才晋升成胶囊。
         // 只在刚开始时做，之后不靠解锁/窗口变化重发，避免流体云反复弹出。
         handler.postDelayed({ repost() }, 120)
-        handler.postDelayed(ticker, 1_000)
+        handler.postDelayed(ticker, 60_000)
         // 被系统杀掉不自动重启（结束提醒由 TimerAlarm 的 setAlarmClock 负责，互不依赖）
         return START_NOT_STICKY
     }
