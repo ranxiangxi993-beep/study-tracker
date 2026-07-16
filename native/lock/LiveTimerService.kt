@@ -22,7 +22,8 @@ import android.os.IBinder
  */
 class LiveTimerService : Service() {
     companion object {
-        const val CHANNEL_ID = "study-live-timer"
+        const val CHANNEL_ID = "study-live-timer-v2"
+        private const val OLD_CHANNEL_ID = "study-live-timer"
         const val NID = 7100
         @Volatile var isRunning = false
         private var instance: LiveTimerService? = null
@@ -120,9 +121,20 @@ class LiveTimerService : Service() {
             .setShowWhen(true)
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
+            .setCategory(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Notification.CATEGORY_STOPWATCH
+                } else {
+                    Notification.CATEGORY_PROGRESS
+                }
+            )
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setColor(Color.rgb(255, 98, 95))
             .setColorized(false)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
 
         // Best-effort Android live-update promotion. ColorOS may choose its own
         // presentation; no static countdown text is supplied because it freezes.
@@ -147,19 +159,20 @@ class LiveTimerService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.deleteNotificationChannel(OLD_CHANNEL_ID)
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "专注进行中",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "专注计时的锁屏和状态栏进度"
+                description = "在状态栏和锁屏持续显示学习倒计时"
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            manager.createNotificationChannel(channel)
         }
     }
 }

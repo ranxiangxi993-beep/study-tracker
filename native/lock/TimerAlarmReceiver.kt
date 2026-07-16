@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.VibrationEffect
@@ -22,7 +25,7 @@ class TimerAlarmReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra("title") ?: "⏰ 时间到"
         val body = intent.getStringExtra("body") ?: ""
         val strongAlert = intent.getBooleanExtra("strongAlert", false)
-        val channelId = "study-timer-complete-v2"
+        val channelId = "study-timer-complete-v3"
 
         // 到点后立刻收起进行中通知，避免胶囊继续停留。
         LiveTimerService.stop(context)
@@ -31,25 +34,45 @@ class TimerAlarmReceiver : BroadcastReceiver() {
 
         // 渠道通常已由 JS 创建；进程曾被杀的极端情况下这里幂等兜底，避免通知被系统丢弃
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(channelId) == null) {
+            nm.deleteNotificationChannel("study-timer-complete-v2")
             val channel = NotificationChannel(channelId, "计时结束提醒", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "学习段或休息段结束时亮屏、响铃并振动"
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 250, 250, 250)
                 setBypassDnd(false)
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                enableLights(true)
+                lightColor = Color.rgb(255, 98, 95)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             nm.createNotificationChannel(channel)
         }
 
-        if (strongAlert) {
-            runCatching {
-                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                @Suppress("DEPRECATION")
-                val wl = pm.newWakeLock(
-                    PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
-                    "study:timerEnd"
-                )
-                wl.acquire(5000)
+        // A normal completion must still reach the user. Strong mode only adds
+        // a full-screen alarm; it no longer gates the basic wake-up behavior.
+        runCatching {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val wakeFlags = if (strongAlert) {
+                PowerManager.FULL_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE
+            } else {
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE
             }
+            val wl = pm.newWakeLock(wakeFlags, "study:timerEnd")
+            wl.acquire(if (strongAlert) 12_000L else 6_000L)
+        }
+
+        if (strongAlert) {
             runCatching {
                 val pattern = longArrayOf(0, 400, 250, 400, 250, 600)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -85,7 +108,7 @@ class TimerAlarmReceiver : BroadcastReceiver() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVibrate(longArrayOf(0, 250, 250, 250))
-            .setDefaults(Notification.DEFAULT_SOUND)
+            .setDefaults(Notification.DEFAULT_SOUND or Notification.DEFAULT_LIGHTS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(contentPI)

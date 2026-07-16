@@ -60,8 +60,13 @@ export async function openFullScreenIntentSettings() {
 // 后续用 setNotificationChannelAsync 改 importance 不会生效（这就是"升到 MAX 也不弹横幅/不震动"的真因）。
 // 日程、计时结束和进行中状态的打扰等级不同，必须使用独立且稳定的渠道。
 const PLAN_CHANNEL_ID = "study-plan-reminders-v2";
-const TIMER_CHANNEL_ID = "study-timer-complete-v2";
-const OLD_CHANNEL_IDS = ["study-reminders", "study-reminders-max"];
+const TIMER_CHANNEL_ID = "study-timer-complete-v3";
+const OLD_CHANNEL_IDS = [
+  "study-reminders",
+  "study-reminders-max",
+  "study-timer-complete-v2",
+  "study-live-timer",
+];
 const PLAN_IDS_KEY = "plan_notif_ids";
 const PLAN_NOTIFICATION_KIND = "daily-plan-reminder";
 const PLAN_NOTIFICATION_TITLE = "📅 即将开始";

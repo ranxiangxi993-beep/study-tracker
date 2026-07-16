@@ -40,6 +40,7 @@ import {
 } from "../storage";
 import { useBg } from "../../App";
 import {
+  ensureNotifPermission,
   scheduleTimerEnd,
   cancelScheduled,
   openNotificationSettings,
@@ -267,20 +268,29 @@ export default function TimerScreen({ navigation }) {
         }
         liveTimerHiddenRef.current = false;
       } else if (s === "background") {
-        // 切到其他 App 时收起，息屏/锁屏时保留给锁屏和 AOD。解锁不会重发通知。
-        isScreenInteractive().then((interactive) => {
+        // ColorOS reports AppState=background slightly before the display finishes
+        // turning off. Delay the screen check so screen-off is not mistaken for an
+        // app switch; that mistake would demote here and repost on every unlock.
+        setTimeout(() => {
           if (
             appStateSeqRef.current !== seq ||
             appStateRef.current !== "background"
           )
             return;
-          if (interactive) {
-            liveTimerHiddenRef.current = true;
-            setLiveTimerPromoted(false);
-          } else {
-            liveTimerHiddenRef.current = false;
-          }
-        });
+          isScreenInteractive().then((interactive) => {
+            if (
+              appStateSeqRef.current !== seq ||
+              appStateRef.current !== "background"
+            )
+              return;
+            if (interactive) {
+              liveTimerHiddenRef.current = true;
+              setLiveTimerPromoted(false);
+            } else {
+              liveTimerHiddenRef.current = false;
+            }
+          });
+        }, 900);
       }
     });
     return () => sub.remove();
@@ -290,6 +300,20 @@ export default function TimerScreen({ navigation }) {
     if (isRunning && !isPaused) return;
     finishingRef.current = false;
     const elapsedAtStart = isPaused ? pausedMsRef.current : 0;
+    if (!countUp) {
+      const canNotify = await ensureNotifPermission();
+      if (!canNotify) {
+        Alert.alert(
+          "需要通知权限",
+          "倒计时进行中和结束提醒都依赖系统通知。请允许研途发送通知，并允许锁屏显示。",
+          [
+            { text: "暂不开始", style: "cancel" },
+            { text: "去设置", onPress: openNotificationSettings },
+          ],
+        );
+        return;
+      }
+    }
     if (
       !isPaused &&
       mode === "work" &&
@@ -714,6 +738,37 @@ export default function TimerScreen({ navigation }) {
               {cfg.minutes} 分钟 · {countUp ? "自由记录" : "到点提醒"}
             </Text>
           </View>
+          <View style={styles.ctrls}>
+            <TouchableOpacity
+              style={[
+                styles.go,
+                { backgroundColor: accentColor },
+                isRunning && !isPaused && { backgroundColor: COLORS.warning },
+              ]}
+              onPress={() => {
+                if (!isRunning || isPaused) doStart();
+                else doPause();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                !isRunning ? "开始学习" : isPaused ? "继续学习" : "暂停学习"
+              }
+            >
+              <Text style={[styles.goT, { color: btnTextColor }]}>
+                {!isRunning ? "▶ 开始学习" : isPaused ? "▶ 继续" : "⏸ 暂停"}
+              </Text>
+            </TouchableOpacity>
+            {isRunning && (
+              <TouchableOpacity
+                style={styles.end}
+                onPress={doStop}
+                accessibilityRole="button"
+                accessibilityLabel="结束本次学习"
+              >
+                <Text style={styles.endT}>结束</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.examStrip}>
             <TouchableOpacity
               style={styles.examCell}
@@ -923,29 +978,6 @@ export default function TimerScreen({ navigation }) {
           >
             <Text style={styles.lockBtnT}>📋 白名单</Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.ctrls}>
-          <TouchableOpacity
-            style={[
-              styles.go,
-              { backgroundColor: accentColor },
-              isRunning && !isPaused && { backgroundColor: COLORS.warning },
-            ]}
-            onPress={() => {
-              if (!isRunning || isPaused) doStart();
-              else doPause();
-            }}
-          >
-            <Text style={[styles.goT, { color: btnTextColor }]}>
-              {!isRunning ? "▶ 开始学习" : isPaused ? "▶ 继续" : "⏸ 暂停"}
-            </Text>
-          </TouchableOpacity>
-          {isRunning && (
-            <TouchableOpacity style={styles.end} onPress={doStop}>
-              <Text style={styles.endT}>↺ 结束</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
@@ -1183,14 +1215,14 @@ export default function TimerScreen({ navigation }) {
                 style={styles.notifBtn}
                 onPress={openNotificationSettings}
               >
-                <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
+                <Text style={styles.notifBtnT}>通知、锁屏显示与悬浮</Text>
                 <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
               </TouchableOpacity>
               <View style={styles.settingToggleRow}>
                 <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.notifBtnT}>息屏强提醒</Text>
+                  <Text style={styles.notifBtnT}>全屏强提醒</Text>
                   <Text style={styles.settingToggleHint}>
-                    计时结束时亮屏并加强震动，默认关闭
+                    普通模式也会亮屏、响铃和振动；开启后额外显示全屏提醒
                   </Text>
                 </View>
                 <Switch
@@ -1609,20 +1641,31 @@ const styles = StyleSheet.create({
   },
   ctrls: {
     flexDirection: "row",
-    justifyContent: "center",
-    paddingVertical: 14,
+    alignItems: "stretch",
+    paddingTop: 14,
+    paddingBottom: 2,
     gap: 10,
   },
-  go: { paddingVertical: 14, paddingHorizontal: 44, borderRadius: 30 },
+  go: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
   pause: { backgroundColor: COLORS.warning },
   goT: { color: "#fff", fontSize: 17, fontWeight: "600" },
   end: {
     backgroundColor: COLORS.card,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 30,
+    minWidth: 88,
+    minHeight: 52,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  endT: { color: COLORS.text2, fontSize: 14 },
+  endT: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
