@@ -20,8 +20,11 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     @ReactMethod fun isLockActive(p: Promise) {
         val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
         val active = prefs.getBoolean("lock_active", false)
+        val level = prefs.getString("lock_level", "strong") ?: "strong"
         StudyAccessibilityService.lockActive = active
-        p.resolve(active)
+        StudyAccessibilityService.lockLevel = level
+        // 持久化标志只代表用户意图；服务不在时锁机并没有真正生效。
+        p.resolve(active && StudyAccessibilityService.instance != null)
     }
 
     @ReactMethod fun isIgnoringBatteryOptimizations(p: Promise) {
@@ -37,13 +40,12 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         }
     }
 
-    @ReactMethod fun showDynamicIsland(title: String, body: String, promise: Promise) {
-        try {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                DynamicIsland.show(reactApplicationContext, "📅", title, body)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) { promise.reject("ERR", e.message) }
+    @ReactMethod fun setLockLevel(level: String, p: Promise) {
+        val safeLevel = if (level in setOf("light", "medium", "strong")) level else "strong"
+        reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            .edit().putString("lock_level", safeLevel).apply()
+        StudyAccessibilityService.lockLevel = safeLevel
+        p.resolve(true)
     }
 
     // Jump to manufacturer's autostart/permission management
@@ -64,32 +66,40 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod fun openWhiteListSettings(p: Promise) {
         try {
-            val intent = when (android.os.Build.BRAND.lowercase()) {
-                "xiaomi", "redmi" -> Intent().apply {
-                    setComponent(android.content.ComponentName(
-                        "com.miui.securitycenter",
-                        "com.miui.permcenter.autostart.AutoStartManagementActivity"))
-                }
-                "huawei" -> Intent().apply {
-                    setComponent(android.content.ComponentName(
-                        "com.huawei.systemmanager",
-                        "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"))
-                }
-                "oppo" -> Intent().apply {
-                    setComponent(android.content.ComponentName(
-                        "com.coloros.oppoguardelf",
-                        "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity"))
-                }
-                "vivo" -> Intent().apply {
-                    setComponent(android.content.ComponentName(
-                        "com.iqoo.secure",
-                        "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"))
-                }
-                else -> Intent().apply { action = android.provider.Settings.ACTION_SETTINGS }
+            val brand = "${Build.BRAND} ${Build.MANUFACTURER}".lowercase()
+            val components = when {
+                brand.contains("oppo") || brand.contains("oneplus") || brand.contains("realme") -> listOf(
+                    ComponentName("com.oplus.battery", "com.oplus.powermanager.fuelgaue.PowerUsageModelActivity"),
+                    ComponentName("com.coloros.oppoguardelf", "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity"),
+                    ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"),
+                    ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")
+                )
+                brand.contains("xiaomi") || brand.contains("redmi") -> listOf(
+                    ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+                )
+                brand.contains("huawei") || brand.contains("honor") -> listOf(
+                    ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")
+                )
+                brand.contains("vivo") || brand.contains("iqoo") -> listOf(
+                    ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")
+                )
+                else -> emptyList()
             }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try { reactApplicationContext.startActivity(intent) } catch (_: Exception) {
-                reactApplicationContext.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+
+            var opened = false
+            for (component in components) {
+                try {
+                    reactApplicationContext.startActivity(Intent().apply {
+                        this.component = component
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                    opened = true
+                    break
+                } catch (_: Exception) {}
+            }
+            if (!opened) {
+                reactApplicationContext.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = android.net.Uri.parse("package:${reactApplicationContext.packageName}")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
             }
@@ -141,14 +151,23 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
 
     // Accessibility-based lock (primary method)
     @ReactMethod fun lock(p: Promise) {
+        if (StudyAccessibilityService.instance == null) {
+            p.resolve("accessibility-required")
+            return
+        }
         val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
         val saved = prefs.getString("whitelist", "") ?: ""
         StudyAccessibilityService.whitelist.clear()
         if (saved.isNotEmpty()) StudyAccessibilityService.whitelist.addAll(saved.split(","))
+        StudyAccessibilityService.lockLevel = prefs.getString("lock_level", "strong") ?: "strong"
         StudyAccessibilityService.lockActive = true
         // 持久化锁定状态：进程被杀重启后无障碍服务可据此自动恢复
         prefs.edit().putBoolean("lock_active", true).apply()
-        LockForegroundService.start(reactApplicationContext)
+        if (StudyAccessibilityService.lockLevel == "light") {
+            LockForegroundService.stop(reactApplicationContext)
+        } else {
+            LockForegroundService.start(reactApplicationContext)
+        }
         p.resolve("accessibility")
     }
 

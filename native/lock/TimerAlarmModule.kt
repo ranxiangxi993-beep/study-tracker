@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
 import com.facebook.react.bridge.*
 
 // 用 AlarmManager.setAlarmClock 调度"计时结束"提醒：
@@ -26,7 +27,7 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
     }
 
     @ReactMethod
-    fun schedule(seconds: Double, title: String, body: String, p: Promise) {
+    fun schedule(seconds: Double, title: String, body: String, strongAlert: Boolean, p: Promise) {
         try {
             val ctx = reactApplicationContext
             val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -35,6 +36,7 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
             val i = Intent(ctx, TimerAlarmReceiver::class.java).apply {
                 putExtra("title", title)
                 putExtra("body", body)
+                putExtra("strongAlert", strongAlert)
             }
             val alarmPI = PendingIntent.getBroadcast(
                 ctx, REQ, i,
@@ -60,13 +62,21 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
         } catch (e: Exception) { p.resolve(false) }
     }
 
+    @ReactMethod
+    fun isInteractive(p: Promise) {
+        try {
+            val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            p.resolve(pm.isInteractive)
+        } catch (e: Exception) { p.resolve(true) }
+    }
+
     // ===== 流体云：计时进行中的 Live Update 实时胶囊 =====
     @ReactMethod
     fun startLive(seconds: Double, title: String, p: Promise) {
         try {
             val total = (seconds * 1000).toLong()
             val endAt = System.currentTimeMillis() + total
-            LiveTimerService.start(reactApplicationContext, endAt, total, title)
+            LiveTimerService.start(reactApplicationContext, endAt, title)
             p.resolve(true)
         } catch (e: Exception) { p.reject("ERR", e.message) }
     }
@@ -74,6 +84,12 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
     @ReactMethod
     fun stopLive(p: Promise) {
         try { LiveTimerService.stop(reactApplicationContext); p.resolve(true) }
+        catch (e: Exception) { p.resolve(false) }
+    }
+
+    @ReactMethod
+    fun setLivePromoted(promoted: Boolean, p: Promise) {
+        try { p.resolve(LiveTimerService.setPromoted(promoted)) }
         catch (e: Exception) { p.resolve(false) }
     }
 }

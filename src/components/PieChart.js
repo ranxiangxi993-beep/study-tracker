@@ -1,16 +1,19 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Line, Text as SvgText, Circle } from 'react-native-svg';
-import { SUBJECTS, COLORS } from '../constants';
-import { formatDuration } from '../storage';
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
+import Svg, { Path, Line, Text as SvgText, Circle } from "react-native-svg";
+import { SUBJECTS, COLORS } from "../constants";
+import { formatDuration } from "../storage";
 
 const VB_W = 360;
-const VB_H = 260;
+const VB_H = 276;
 const CX = VB_W / 2;
-const CY = 122;
-const OUTER_R = 76;
-const INNER_R = 48;
-const LABEL_R = 104;
+const CY = 136;
+const OUTER_R = 68;
+const INNER_R = 43;
+const ELBOW_R = 91;
+const LABEL_TOP = 32;
+const LABEL_BOTTOM = 240;
+const LABEL_GAP = 48;
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -28,68 +31,109 @@ function donutPath(startA, endA) {
     `A ${OUTER_R} ${OUTER_R} 0 ${large} 0 ${outerEnd.x} ${outerEnd.y}`,
     `L ${innerEnd.x} ${innerEnd.y}`,
     `A ${INNER_R} ${INNER_R} 0 ${large} 1 ${innerStart.x} ${innerStart.y}`,
-    'Z',
-  ].join(' ');
+    "Z",
+  ].join(" ");
 }
 
-function labelSlot(slice, index, sideIndex, totalOnSide) {
-  const isRight = slice.midAngle <= 180;
-  const anchor = isRight ? 'start' : 'end';
-  const edge = polarToXY(CX, CY, OUTER_R + 2, slice.midAngle);
-  const bend = polarToXY(CX, CY, LABEL_R, slice.midAngle);
-  const gap = totalOnSide > 4 ? 31 : 36;
-  const startY = CY - ((totalOnSide - 1) * gap) / 2;
-  const y = Math.max(28, Math.min(220, startY + sideIndex * gap));
-  const x = isRight ? 290 : 70;
-  const lineEndX = isRight ? x - 8 : x + 8;
-  return { ...slice, edge, bend: { x: bend.x, y }, x, y, lineEndX, anchor, index };
+function placeSideLabels(sideSlices, isRight) {
+  if (!sideSlices.length) return [];
+
+  const sorted = [...sideSlices]
+    .map((slice) => ({
+      ...slice,
+      edge: polarToXY(CX, CY, OUTER_R + 3, slice.midAngle),
+      elbow: polarToXY(CX, CY, ELBOW_R, slice.midAngle),
+    }))
+    .sort((a, b) => a.elbow.y - b.elbow.y);
+
+  const available = LABEL_BOTTOM - LABEL_TOP;
+  const gap =
+    sorted.length > 1
+      ? Math.min(LABEL_GAP, available / (sorted.length - 1))
+      : 0;
+  const naturalStart =
+    sorted.length > 1
+      ? Math.max(
+          LABEL_TOP,
+          Math.min(sorted[0].elbow.y, LABEL_BOTTOM - gap * (sorted.length - 1)),
+        )
+      : Math.max(LABEL_TOP, Math.min(sorted[0].elbow.y, LABEL_BOTTOM));
+
+  const positions = sorted.map((slice, index) =>
+    Math.max(
+      naturalStart + index * gap,
+      Math.min(slice.elbow.y, LABEL_BOTTOM - (sorted.length - 1 - index) * gap),
+    ),
+  );
+
+  for (let i = 1; i < positions.length; i += 1) {
+    positions[i] = Math.max(positions[i], positions[i - 1] + gap);
+  }
+  for (let i = positions.length - 2; i >= 0; i -= 1) {
+    positions[i] = Math.min(positions[i], positions[i + 1] - gap);
+  }
+
+  return sorted.map((slice, index) => ({
+    ...slice,
+    labelY: positions[index],
+    textX: isRight ? 280 : 80,
+    lineEndX: isRight ? 271 : 89,
+    anchor: isRight ? "start" : "end",
+  }));
 }
 
 export default function PieChart({ data, totalSec }) {
   const entries = Object.entries(SUBJECTS)
-    .map(([key, subj]) => ({
-      key,
-      ...subj,
-      seconds: data[key] || 0,
-    }))
-    .filter(e => e.seconds > 0)
+    .map(([key, subj]) => ({ key, ...subj, seconds: data[key] || 0 }))
+    .filter((entry) => entry.seconds > 0)
     .sort((a, b) => b.seconds - a.seconds);
 
   if (entries.length === 0 || !totalSec) {
     return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyIcon}>📊</Text>
-        <Text style={styles.emptyText}>暂无数据，开始计时吧</Text>
+      <View style={styles.empty} accessibilityRole="text">
+        <Text style={styles.emptyTitle}>还没有科目数据</Text>
+        <Text style={styles.emptyText}>
+          完成一个学习段后，这里会显示科目占比。
+        </Text>
       </View>
     );
   }
 
   let currentAngle = 0;
-  const slices = entries.map(entry => {
+  const slices = entries.map((entry) => {
     const angle = (entry.seconds / totalSec) * 360;
     const slice = {
       ...entry,
       pct: Math.round((entry.seconds / totalSec) * 100),
       startAngle: currentAngle,
-      endAngle: currentAngle + (angle >= 360 ? 359.999 : Math.max(angle - 1.1, 0.5)),
+      endAngle:
+        currentAngle + (angle >= 360 ? 359.999 : Math.max(angle - 1.1, 0.5)),
       midAngle: currentAngle + angle / 2,
     };
     currentAngle += angle;
     return slice;
   });
 
-  const rightSlices = slices.filter(s => s.midAngle <= 180).sort((a, b) => a.midAngle - b.midAngle);
-  const leftSlices = slices.filter(s => s.midAngle > 180).sort((a, b) => a.midAngle - b.midAngle);
   const labels = [
-    ...rightSlices.map((s, i) => labelSlot(s, i, i, rightSlices.length)),
-    ...leftSlices.map((s, i) => labelSlot(s, i + rightSlices.length, i, leftSlices.length)),
+    ...placeSideLabels(
+      slices.filter((slice) => slice.midAngle <= 180),
+      true,
+    ),
+    ...placeSideLabels(
+      slices.filter((slice) => slice.midAngle > 180),
+      false,
+    ),
   ];
 
   return (
-    <View style={styles.container}>
-      <Svg width="100%" height={244} viewBox={`0 0 ${VB_W} ${VB_H}`}>
+    <View
+      style={styles.container}
+      accessible
+      accessibilityLabel={`科目占比，总学习时长 ${formatDuration(totalSec)}`}
+    >
+      <Svg width="100%" height={VB_H} viewBox={`0 0 ${VB_W} ${VB_H}`}>
         <Path d={donutPath(0, 359.999)} fill="rgba(255,255,255,0.08)" />
-        {slices.map(slice => (
+        {slices.map((slice) => (
           <Path
             key={slice.key}
             d={donutPath(slice.startAngle, slice.endAngle)}
@@ -98,100 +142,103 @@ export default function PieChart({ data, totalSec }) {
           />
         ))}
 
-        {labels.map(label => (
+        {labels.map((label) => (
           <React.Fragment key={`label-${label.key}`}>
-            <Line x1={label.edge.x} y1={label.edge.y} x2={label.bend.x} y2={label.bend.y} stroke={label.color} strokeWidth={1.2} opacity={0.68} />
-            <Line x1={label.bend.x} y1={label.bend.y} x2={label.lineEndX} y2={label.y} stroke={label.color} strokeWidth={1.2} opacity={0.68} />
-            <Circle cx={label.edge.x} cy={label.edge.y} r={2.8} fill={label.color} />
-            <SvgText x={label.x} y={label.y - 5} fill={COLORS.text} fontSize="12" fontWeight="800" textAnchor={label.anchor}>
-              {label.icon} {label.name}
+            <Line
+              x1={label.edge.x}
+              y1={label.edge.y}
+              x2={label.elbow.x}
+              y2={label.labelY}
+              stroke={label.color}
+              strokeWidth={1.4}
+              opacity={0.88}
+            />
+            <Line
+              x1={label.elbow.x}
+              y1={label.labelY}
+              x2={label.lineEndX}
+              y2={label.labelY}
+              stroke={label.color}
+              strokeWidth={1.4}
+              opacity={0.88}
+            />
+            <Circle
+              cx={label.edge.x}
+              cy={label.edge.y}
+              r={2.6}
+              fill={label.color}
+            />
+            <SvgText
+              x={label.textX}
+              y={label.labelY - 4}
+              fill={COLORS.text}
+              fontSize="11"
+              fontWeight="800"
+              textAnchor={label.anchor}
+            >
+              {label.name} {label.pct}%
             </SvgText>
-            <SvgText x={label.x} y={label.y + 11} fill={COLORS.text2} fontSize="10" fontWeight="700" textAnchor={label.anchor}>
-              {label.pct}% · {formatDuration(label.seconds)}
+            <SvgText
+              x={label.textX}
+              y={label.labelY + 13}
+              fill={COLORS.text2}
+              fontSize="9.5"
+              fontWeight="700"
+              textAnchor={label.anchor}
+            >
+              {formatDuration(label.seconds)}
             </SvgText>
           </React.Fragment>
         ))}
 
-        <SvgText x={CX} y={CY - 4} fill={COLORS.text} fontSize="18" fontWeight="900" textAnchor="middle">
+        <SvgText
+          x={CX}
+          y={CY - 3}
+          fill={COLORS.text}
+          fontSize="17"
+          fontWeight="900"
+          textAnchor="middle"
+        >
           {formatDuration(totalSec)}
         </SvgText>
-        <SvgText x={CX} y={CY + 16} fill={COLORS.text2} fontSize="11" fontWeight="700" textAnchor="middle">
+        <SvgText
+          x={CX}
+          y={CY + 17}
+          fill={COLORS.text2}
+          fontSize="10"
+          fontWeight="700"
+          textAnchor="middle"
+        >
           总计
         </SvgText>
       </Svg>
-
-      <View style={styles.legend}>
-        {slices.map(slice => (
-          <View key={`legend-${slice.key}`} style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
-            <Text style={styles.legendName} numberOfLines={1}>{slice.icon} {slice.name}</Text>
-            <Text style={styles.legendTime}>{formatDuration(slice.seconds)}</Text>
-            <Text style={styles.legendPct}>{slice.pct}%</Text>
-          </View>
-        ))}
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  legend: {
-    width: '100%',
-    paddingHorizontal: 18,
-    marginTop: -2,
-    rowGap: 7,
-  },
-  legendItem: {
-    minHeight: 38,
-    borderRadius: 12,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.055)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-  },
-  legendName: {
-    flex: 1,
-    minWidth: 0,
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  legendTime: {
-    color: COLORS.text2,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  legendPct: {
-    color: COLORS.text,
-    fontSize: 12,
-    fontWeight: '900',
-    minWidth: 34,
-    textAlign: 'right',
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
   },
   empty: {
-    alignItems: 'center',
-    paddingVertical: 40,
+    width: "100%",
+    minHeight: 150,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
-  emptyIcon: {
-    fontSize: 44,
-    marginBottom: 8,
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "800",
   },
   emptyText: {
-    fontSize: 14,
+    marginTop: 6,
     color: COLORS.text2,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
   },
 });

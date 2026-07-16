@@ -1,26 +1,71 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Vibration, Alert, Platform, Modal, TextInput, Pressable, AppState,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { Image } from 'expo-image';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';  // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
-import TimerCircle from '../components/TimerCircle';
-import SubjectSelector from '../components/SubjectSelector';
-import DefaultBackdrop from '../components/DefaultBackdrop';
-import { SUBJECTS, TIMER_MODES, COLORS, DEFAULT_GOAL_MINUTES, APP_VERSION_NAME, APP_VERSION_CODE } from '../constants';
-import { startSession, stopSession, getActiveSession, deleteSession, getTodayStats, getStreak, formatDuration } from '../storage';
-import { useBg } from '../../App';
-import { celebrateComplete, remindBreak, scheduleTimerEnd, cancelScheduled, openNotificationSettings, openFullScreenIntentSettings, startLiveTimer, stopLiveTimer } from '../notify';
-import { isAccessibilityEnabled, isAccessibilitySettingOn, isLockActive, openAccessibilitySettings, openWhiteListSettings, openBatterySettings, lockScreen, unlockScreen, getInstalledApps, saveWhitelist } from '../nativeLock';
-import { nextQuote } from '../quotes';
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  Platform,
+  Modal,
+  TextInput,
+  Pressable,
+  AppState,
+  Switch,
+} from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { Image } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy"; // 旧 API（getInfoAsync/copyAsync 等）在 SDK 54 移到 legacy
+import TimerCircle from "../components/TimerCircle";
+import SubjectSelector from "../components/SubjectSelector";
+import DefaultBackdrop from "../components/DefaultBackdrop";
+import {
+  SUBJECTS,
+  TIMER_MODES,
+  COLORS,
+  DEFAULT_GOAL_MINUTES,
+  APP_VERSION_NAME,
+  APP_VERSION_CODE,
+} from "../constants";
+import {
+  startSession,
+  stopSession,
+  getActiveSession,
+  deleteSession,
+  getTodayStats,
+  getStreak,
+  formatDuration,
+} from "../storage";
+import { useBg } from "../../App";
+import {
+  scheduleTimerEnd,
+  cancelScheduled,
+  openNotificationSettings,
+  openFullScreenIntentSettings,
+  startLiveTimer,
+  stopLiveTimer,
+  setLiveTimerPromoted,
+  isScreenInteractive,
+} from "../notify";
+import {
+  isAccessibilityEnabled,
+  isAccessibilitySettingOn,
+  isLockActive,
+  openAccessibilitySettings,
+  openWhiteListSettings,
+  openBatterySettings,
+  lockScreen,
+  unlockScreen,
+  getInstalledApps,
+  saveWhitelist,
+} from "../nativeLock";
+import { nextQuote } from "../quotes";
 
 export default function TimerScreen({ navigation }) {
-  const [mode, setMode] = useState('work');
-  const [activeSubject, setActiveSubject] = useState('english');
+  const [mode, setMode] = useState("work");
+  const [activeSubject, setActiveSubject] = useState("english");
   const [timeLeft, setTimeLeft] = useState(TIMER_MODES.work.minutes * 60);
   const [totalTime, setTotalTime] = useState(TIMER_MODES.work.minutes * 60);
   const [isRunning, setIsRunning] = useState(false);
@@ -30,50 +75,86 @@ export default function TimerScreen({ navigation }) {
   const [showSettings, setShowSettings] = useState(false);
   const [countUp, setCountUp] = useState(false);
   const [accentColor, setAccentColor] = useState(COLORS.accent);
-  const [breakColors, setBreakColors] = useState({ short: '#5CB85C', long: '#4A90D9' }); // 短休/长休圆环色（各自可设）
+  const [breakColors, setBreakColors] = useState({
+    short: "#5CB85C",
+    long: "#4A90D9",
+  }); // 短休/长休圆环色（各自可设）
   const [locked, setLocked] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const [appsList, setAppsList] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [wlPkgs, setWlPkgs] = useState([]);
-  const [quote, setQuote] = useState('');
+  const [quote, setQuote] = useState("");
   const { bgUri, setBgUri, resetBg } = useBg();
   const [customMin, setCustomMin] = useState({ work: 25, short: 5, long: 15 });
-  const [editMin, setEditMin] = useState({ work: '25', short: '5', long: '15' });
-  const [dailyGoalMin, setDailyGoalMin] = useState(String(DEFAULT_GOAL_MINUTES));
-  const [dailyGoalHours, setDailyGoalHours] = useState(String(Math.round((DEFAULT_GOAL_MINUTES / 60) * 10) / 10));
-  const [lockLevel, setLockLevel] = useState('strong');
+  const [editMin, setEditMin] = useState({
+    work: "25",
+    short: "5",
+    long: "15",
+  });
+  const [dailyGoalMin, setDailyGoalMin] = useState(
+    String(DEFAULT_GOAL_MINUTES),
+  );
+  const [dailyGoalHours, setDailyGoalHours] = useState(
+    String(Math.round((DEFAULT_GOAL_MINUTES / 60) * 10) / 10),
+  );
+  const [lockLevel, setLockLevel] = useState("strong");
   const [bindStudyLock, setBindStudyLock] = useState(true);
+  const [strongTimerAlert, setStrongTimerAlert] = useState(false);
   const [cdDays, setCdDays] = useState(null);
   const [cdStudied, setCdStudied] = useState(null);
   const [todayStats, setTodayStats] = useState({});
   const [nextPlanItem, setNextPlanItem] = useState(null);
 
   const modes = {
-    work:  { ...TIMER_MODES.work,  minutes: customMin.work },
+    work: { ...TIMER_MODES.work, minutes: customMin.work },
     short: { ...TIMER_MODES.shortBreak, minutes: customMin.short },
-    long:  { ...TIMER_MODES.longBreak,  minutes: customMin.long },
+    long: { ...TIMER_MODES.longBreak, minutes: customMin.long },
   };
-  const todayTotal = Object.values(todayStats).reduce((sum, sec) => sum + sec, 0);
-  const todayGoal = Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES) * 60;
-  const goalPct = Math.min(100, Math.round(todayTotal / todayGoal * 100));
+  const todayTotal = Object.values(todayStats).reduce(
+    (sum, sec) => sum + sec,
+    0,
+  );
+  const todayGoal =
+    Math.max(1, parseInt(dailyGoalMin) || DEFAULT_GOAL_MINUTES) * 60;
+  const goalPct = Math.min(100, Math.round((todayTotal / todayGoal) * 100));
   const cfg = modes[mode];
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const pausedMsRef = useRef(0);
   const modesRef = useRef(modes);
-  useEffect(() => { modesRef.current = modes; }, [customMin]);
+  useEffect(() => {
+    modesRef.current = modes;
+  }, [customMin]);
   const notifIdRef = useRef(null); // 预约的"计时结束"系统通知 id
   // sessionId 的镜像 ref：倒计时自然结束时，finish 是被 setInterval 里"旧的" updateDisplay
   // 闭包调用的，闭包里的 sessionId 可能还是启动前的 null（异步 setState 的经典陷阱），
   // 导致 stopSession 拿不到 id、时长记不进去。改成从 ref 读最新 id。
   const sessionIdRef = useRef(null);
-  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
-  const timerStateRef = useRef({ isRunning: false, isPaused: false, countUp: false, mode: 'work', activeSubject: 'english' });
   useEffect(() => {
-    timerStateRef.current = { isRunning, isPaused, countUp, mode, activeSubject };
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  const timerStateRef = useRef({
+    isRunning: false,
+    isPaused: false,
+    countUp: false,
+    mode: "work",
+    activeSubject: "english",
+  });
+  useEffect(() => {
+    timerStateRef.current = {
+      isRunning,
+      isPaused,
+      countUp,
+      mode,
+      activeSubject,
+    };
   }, [isRunning, isPaused, countUp, mode, activeSubject]);
   const appStateRef = useRef(AppState.currentState);
+  const appStateSeqRef = useRef(0);
+  const liveTimerHiddenRef = useRef(false);
+  const finishRef = useRef(null);
+  const finishingRef = useRef(false);
 
   const getElapsed = useCallback(() => {
     if (!startTimeRef.current) return 0;
@@ -88,7 +169,7 @@ export default function TimerScreen({ navigation }) {
     } else {
       const remaining = Math.max(0, modes[mode].minutes * 60 - elapsed);
       setTimeLeft(remaining);
-      if (remaining <= 0) finish();
+      if (remaining <= 0) finishRef.current?.();
     }
     setTotalTime(modes[mode].minutes * 60);
   }, [countUp, mode, customMin, getElapsed]);
@@ -97,38 +178,54 @@ export default function TimerScreen({ navigation }) {
     useCallback(() => {
       getTodayStats().then(setTodayStats);
       isLockActive().then(setLocked);
-      AsyncStorage.getItem('lock_level').then(v => { if (v) setLockLevel(v); });
-      AsyncStorage.getItem('lock_bind_study').then(v => { if (v !== null) setBindStudyLock(v === '1'); });
-      AsyncStorage.getItem('daily_plan').then(data => {
-        const plan = data ? JSON.parse(data) : [];
-        setNextPlanItem(findNextPlanItem(plan));
-      }).catch(() => setNextPlanItem(null));
-    }, [])
+      AsyncStorage.getItem("lock_level").then((v) => {
+        if (v) setLockLevel(v === "normal" ? "medium" : v);
+      });
+      AsyncStorage.getItem("lock_bind_study").then((v) => {
+        if (v !== null) setBindStudyLock(v === "1");
+      });
+      AsyncStorage.getItem("daily_plan")
+        .then((data) => {
+          const plan = data ? JSON.parse(data) : [];
+          setNextPlanItem(findNextPlanItem(plan));
+        })
+        .catch(() => setNextPlanItem(null));
+    }, []),
   );
 
   const finish = useCallback(async () => {
-    Vibration.vibrate([500, 200, 500, 200, 800]);
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     // 不再取消预约的系统通知——让它像「日程提醒」那样，到点由系统弹出悬浮横幅，
     // 并在锁屏/息屏时也显示（前台 setNotificationHandler 也会弹横幅）。这样无论 App
-    // 在前台、后台还是息屏，倒计时结束都有一致的"微信式"提醒，不用一直盯着界面。
+    // 在前台、后台还是息屏，倒计时结束都有一致的系统提醒，不用一直盯着界面。
     notifIdRef.current = null;
+    clearInterval(timerRef.current);
+    setIsRunning(false);
+    setIsPaused(false);
     stopLiveTimer(); // 收起流体云实时胶囊（结束提醒由系统闹钟弹出）
-    if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+    if (mode === "work" && bindStudyLock && lockLevel === "strong") {
       await unlockScreen();
       setLocked(false);
     }
-    clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-    const sid = sessionIdRef.current;          // 读最新 id（见上方注释，避免闭包拿到 null）
+    const sid = sessionIdRef.current; // 读最新 id（见上方注释，避免闭包拿到 null）
     // 自然结束=跑满本模式时长；封顶避免"后台/息屏超时很久才对账结束"把多余时间算进去
-    if (sid && mode === 'work') { await stopSession(sid, Math.min(getElapsed(), modes[mode].minutes * 60)); setSessionId(null); sessionIdRef.current = null; getStreak().then(setStreak); }
+    if (sid && mode === "work") {
+      await stopSession(sid, Math.min(getElapsed(), modes[mode].minutes * 60));
+      setSessionId(null);
+      sessionIdRef.current = null;
+      getStreak().then(setStreak);
+    }
     // 自然结束后统一回到「学习准备态」：休息结束自动切回 work 并把时长摆满，
     // 这样息屏回来（由下方 AppState 对账补调 finish）状态自动归位，能直接按"开始学习"，
     // 不会卡在"休息中…00:00"、也不会因 isRunning 残留 true 导致开始按钮失灵。
-    setMode('work');
+    setMode("work");
     setTimeLeft(countUp ? 0 : modes.work.minutes * 60);
     setTotalTime(modes.work.minutes * 60);
     startTimeRef.current = null;
-  }, [mode, customMin, countUp, getElapsed]);
+    finishingRef.current = false;
+  }, [mode, customMin, countUp, getElapsed, bindStudyLock, lockLevel]);
+  finishRef.current = finish;
 
   // 息屏/Doze 下 JS 被冻结，驱动 finish 的 setInterval 不跑 → 倒计时到点也不会结算，
   // 表现为"卡在休息 00:00、连开始学习都按不动"。这里在 App 回到前台时做一次对账：
@@ -140,26 +237,50 @@ export default function TimerScreen({ navigation }) {
       if (remaining <= 0) finish();
     }
   };
-  const liveTitleRef = useRef(null);
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => {
-      const prevState = appStateRef.current;
+    const sub = AppState.addEventListener("change", (s) => {
       appStateRef.current = s;
-      if (s === 'active') {
+      const seq = ++appStateSeqRef.current;
+      if (s === "active") {
         reconcileRef.current();
         const st = timerStateRef.current;
-        if (prevState === 'background' && st.isRunning && !st.isPaused && !st.countUp && startTimeRef.current) {
-          const remaining = modesRef.current[st.mode].minutes * 60 - getElapsed();
+        if (
+          liveTimerHiddenRef.current &&
+          st.isRunning &&
+          !st.isPaused &&
+          !st.countUp &&
+          startTimeRef.current
+        ) {
+          const remaining =
+            modesRef.current[st.mode].minutes * 60 - getElapsed();
           if (remaining > 0) {
-            const capsuleTitle = st.mode === 'work'
-              ? `📖 ${SUBJECTS[st.activeSubject]?.name || '学习'}`
-              : (st.mode === 'short' ? '☕ 短休' : '😴 长休');
-            liveTitleRef.current = capsuleTitle;
-            startLiveTimer(remaining, capsuleTitle);
+            const capsuleTitle =
+              st.mode === "work"
+                ? `📖 ${SUBJECTS[st.activeSubject]?.name || "学习"}`
+                : st.mode === "short"
+                  ? "☕ 短休"
+                  : "😴 长休";
+            setLiveTimerPromoted(true).then((updated) => {
+              if (!updated) startLiveTimer(remaining, capsuleTitle);
+            });
           }
         }
-      } else if (s === 'background' || s === 'inactive') {
-        stopLiveTimer();
+        liveTimerHiddenRef.current = false;
+      } else if (s === "background") {
+        // 切到其他 App 时收起，息屏/锁屏时保留给锁屏和 AOD。解锁不会重发通知。
+        isScreenInteractive().then((interactive) => {
+          if (
+            appStateSeqRef.current !== seq ||
+            appStateRef.current !== "background"
+          )
+            return;
+          if (interactive) {
+            liveTimerHiddenRef.current = true;
+            setLiveTimerPromoted(false);
+          } else {
+            liveTimerHiddenRef.current = false;
+          }
+        });
       }
     });
     return () => sub.remove();
@@ -167,126 +288,253 @@ export default function TimerScreen({ navigation }) {
 
   const doStart = useCallback(async () => {
     if (isRunning && !isPaused) return;
+    finishingRef.current = false;
     const elapsedAtStart = isPaused ? pausedMsRef.current : 0;
-    if (!isPaused && mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+    if (
+      !isPaused &&
+      mode === "work" &&
+      bindStudyLock &&
+      lockLevel === "strong"
+    ) {
       const active = await isLockActive();
       if (!active) {
         const hasAcc = await isAccessibilityEnabled();
         if (hasAcc) {
-          const result = await lockScreen();
-          if (result !== 'none' && result !== 'error') setLocked(true);
+          const result = await lockScreen(lockLevel);
+          if (["none", "error", "accessibility-required"].includes(result)) {
+            Alert.alert(
+              "专注锁未生效",
+              "请到锁机页重新检查无障碍服务后再开始。",
+            );
+            return;
+          }
+          setLocked(true);
+        } else {
+          Alert.alert(
+            "先开启专注锁权限",
+            "当前设置为强力锁绑定学习段。开启无障碍服务后，开始学习才会同步锁机。",
+            [
+              { text: "取消", style: "cancel" },
+              { text: "去开启", onPress: openAccessibilitySettings },
+            ],
+          );
+          return;
         }
       } else {
         setLocked(true);
       }
     }
     if (!isPaused) {
-      if (mode === 'work') { const id = await startSession(activeSubject); setSessionId(id); sessionIdRef.current = id; }
+      if (mode === "work") {
+        const id = await startSession(activeSubject);
+        setSessionId(id);
+        sessionIdRef.current = id;
+      }
       startTimeRef.current = Date.now();
     } else {
       startTimeRef.current = Date.now() - pausedMsRef.current * 1000;
       pausedMsRef.current = 0;
     }
-    setIsRunning(true); setIsPaused(false);
+    setIsRunning(true);
+    setIsPaused(false);
     if (!isPaused) setQuote(nextQuote());
     // 预约"计时结束"系统通知：倒计时模式才有终点；App 退后台/被杀也会响
-    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    cancelScheduled(notifIdRef.current);
+    notifIdRef.current = null;
     if (!countUp) {
       const remaining = modes[mode].minutes * 60 - elapsedAtStart;
-      notifIdRef.current = await scheduleTimerEnd(remaining, mode === 'work', SUBJECTS[activeSubject]?.name);
+      notifIdRef.current = await scheduleTimerEnd(
+        remaining,
+        mode === "work",
+        SUBJECTS[activeSubject]?.name,
+        strongTimerAlert,
+      );
       // 流体云实时胶囊：倒计时进行中常驻显示剩余时间
-      const capsuleTitle = mode === 'work'
-        ? `📖 ${SUBJECTS[activeSubject]?.name || '学习'}`
-        : (mode === 'short' ? '☕ 短休' : '😴 长休');
-      liveTitleRef.current = capsuleTitle;  // 供退后台促升时复用
+      const capsuleTitle =
+        mode === "work"
+          ? `📖 ${SUBJECTS[activeSubject]?.name || "学习"}`
+          : mode === "short"
+            ? "☕ 短休"
+            : "😴 长休";
       startLiveTimer(remaining, capsuleTitle);
     }
     clearInterval(timerRef.current);
     timerRef.current = setInterval(updateDisplay, 200);
     updateDisplay();
-  }, [isRunning, isPaused, mode, activeSubject, countUp, updateDisplay, bindStudyLock, lockLevel]);
+  }, [
+    isRunning,
+    isPaused,
+    mode,
+    activeSubject,
+    countUp,
+    updateDisplay,
+    bindStudyLock,
+    lockLevel,
+    strongTimerAlert,
+  ]);
 
   const doPause = useCallback(() => {
-    setIsPaused(true); clearInterval(timerRef.current);
+    setIsPaused(true);
+    clearInterval(timerRef.current);
     pausedMsRef.current = getElapsed();
-    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    cancelScheduled(notifIdRef.current);
+    notifIdRef.current = null;
     stopLiveTimer();
   }, [getElapsed]);
   const doStop = useCallback(async () => {
-    clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-    cancelScheduled(notifIdRef.current); notifIdRef.current = null;
+    clearInterval(timerRef.current);
+    setIsRunning(false);
+    setIsPaused(false);
+    cancelScheduled(notifIdRef.current);
+    notifIdRef.current = null;
     stopLiveTimer();
-    if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
+    if (mode === "work" && bindStudyLock && lockLevel === "strong") {
       await unlockScreen();
       setLocked(false);
     }
     // 暂停态结束→记暂停那一刻的学习秒数（pausedMsRef）；运行态→记当前已学秒数。均不含暂停挂起的时间。
-    if (sessionId && mode === 'work') { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); getStreak().then(setStreak); }
+    if (sessionId && mode === "work") {
+      await stopSession(
+        sessionId,
+        isPaused ? pausedMsRef.current : getElapsed(),
+      );
+      setSessionId(null);
+      getStreak().then(setStreak);
+    }
     setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
     startTimeRef.current = null;
-  }, [mode, sessionId, customMin, countUp, isPaused, getElapsed, bindStudyLock, lockLevel]);
+  }, [
+    mode,
+    sessionId,
+    customMin,
+    countUp,
+    isPaused,
+    getElapsed,
+    bindStudyLock,
+    lockLevel,
+  ]);
 
-  const switchMode = useCallback((m) => {
-    if (isRunning) { clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-      cancelScheduled(notifIdRef.current); notifIdRef.current = null;
-      stopLiveTimer();
-      if (mode === 'work' && bindStudyLock && lockLevel === 'strong') {
-        unlockScreen().then(() => setLocked(false));
-      }
-      if (mode === 'work' && sessionId) { stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
-    }
-    setMode(m); setTimeLeft(countUp ? 0 : modes[m].minutes * 60); setTotalTime(modes[m].minutes * 60);
-    startTimeRef.current = null;
-  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed, bindStudyLock, lockLevel]);
-
-  const handleSubject = useCallback((key) => {
-    if (isRunning && mode === 'work') {
-      Alert.alert('切换科目', '会结束当前计时', [{ text: '取消', style: 'cancel' }, {
-        text: '确定', onPress: async () => {
-          if (sessionId) { await stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed()); setSessionId(null); }
-          cancelScheduled(notifIdRef.current); notifIdRef.current = null;
-          stopLiveTimer();
-          if (bindStudyLock && lockLevel === 'strong') {
-            await unlockScreen();
-            setLocked(false);
-          }
-          clearInterval(timerRef.current); setIsRunning(false); setIsPaused(false);
-          setTimeLeft(countUp ? 0 : modes[mode].minutes * 60); setActiveSubject(key);
-          startTimeRef.current = null;
+  const switchMode = useCallback(
+    (m) => {
+      if (isRunning) {
+        clearInterval(timerRef.current);
+        setIsRunning(false);
+        setIsPaused(false);
+        cancelScheduled(notifIdRef.current);
+        notifIdRef.current = null;
+        stopLiveTimer();
+        if (mode === "work" && bindStudyLock && lockLevel === "strong") {
+          unlockScreen().then(() => setLocked(false));
         }
-      }]);
-      return;
-    }
-    setActiveSubject(key);
-  }, [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed]);
+        if (mode === "work" && sessionId) {
+          stopSession(sessionId, isPaused ? pausedMsRef.current : getElapsed());
+          setSessionId(null);
+        }
+      }
+      setMode(m);
+      setTimeLeft(countUp ? 0 : modes[m].minutes * 60);
+      setTotalTime(modes[m].minutes * 60);
+      startTimeRef.current = null;
+    },
+    [
+      isRunning,
+      mode,
+      sessionId,
+      customMin,
+      countUp,
+      isPaused,
+      getElapsed,
+      bindStudyLock,
+      lockLevel,
+    ],
+  );
+
+  const handleSubject = useCallback(
+    (key) => {
+      if (isRunning && mode === "work") {
+        Alert.alert("切换科目", "会结束当前计时", [
+          { text: "取消", style: "cancel" },
+          {
+            text: "确定",
+            onPress: async () => {
+              if (sessionId) {
+                await stopSession(
+                  sessionId,
+                  isPaused ? pausedMsRef.current : getElapsed(),
+                );
+                setSessionId(null);
+              }
+              cancelScheduled(notifIdRef.current);
+              notifIdRef.current = null;
+              stopLiveTimer();
+              if (bindStudyLock && lockLevel === "strong") {
+                await unlockScreen();
+                setLocked(false);
+              }
+              clearInterval(timerRef.current);
+              setIsRunning(false);
+              setIsPaused(false);
+              setTimeLeft(countUp ? 0 : modes[mode].minutes * 60);
+              setActiveSubject(key);
+              startTimeRef.current = null;
+            },
+          },
+        ]);
+        return;
+      }
+      setActiveSubject(key);
+    },
+    [isRunning, mode, sessionId, customMin, countUp, isPaused, getElapsed],
+  );
 
   // ====== Settings ======
   const saveDurations = async () => {
     const w = Math.max(1, parseInt(editMin.work) || 25);
     const s = Math.max(1, parseInt(editMin.short) || 5);
     const l = Math.max(1, parseInt(editMin.long) || 15);
-    const goalHours = Math.max(0.5, parseFloat(String(dailyGoalHours).replace(',', '.')) || (DEFAULT_GOAL_MINUTES / 60));
+    const goalHours = Math.max(
+      0.5,
+      parseFloat(String(dailyGoalHours).replace(",", ".")) ||
+        DEFAULT_GOAL_MINUTES / 60,
+    );
     const goal = Math.max(30, Math.round(goalHours * 60));
     setCustomMin({ work: w, short: s, long: l });
-    await AsyncStorage.setItem('custom_durations', JSON.stringify({ work: w, short: s, long: l }));
+    await AsyncStorage.setItem(
+      "custom_durations",
+      JSON.stringify({ work: w, short: s, long: l }),
+    );
     setDailyGoalMin(String(goal));
     setDailyGoalHours(String(Math.round((goal / 60) * 10) / 10));
-    await AsyncStorage.setItem('daily_goal_minutes', String(goal));
-    if (!isRunning) { setTimeLeft(countUp ? 0 : w * 60); setTotalTime(w * 60); }
+    await AsyncStorage.setItem("daily_goal_minutes", String(goal));
+    if (!isRunning) {
+      setTimeLeft(countUp ? 0 : w * 60);
+      setTotalTime(w * 60);
+    }
   };
 
   const pickBg = async () => {
     const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!p.granted) { Alert.alert('需要相册权限'); return; }
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true, aspect: [9, 16] });
+    if (!p.granted) {
+      Alert.alert("需要相册权限");
+      return;
+    }
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.9,
+      allowsEditing: true,
+      aspect: [9, 16],
+    });
     if (r.canceled || !r.assets[0]) return;
     try {
-      const dir = FileSystem.documentDirectory + 'bg/';
-      if (!(await FileSystem.getInfoAsync(dir)).exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const dest = dir + 'bg_' + Date.now() + '.jpg';
+      const dir = FileSystem.documentDirectory + "bg/";
+      if (!(await FileSystem.getInfoAsync(dir)).exists)
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      const dest = dir + "bg_" + Date.now() + ".jpg";
       await FileSystem.copyAsync({ from: r.assets[0].uri, to: dest });
       setBgUri(dest);
-    } catch (e) { setBgUri(r.assets[0].uri); }
+    } catch (e) {
+      setBgUri(r.assets[0].uri);
+    }
   };
 
   // Init
@@ -299,109 +547,212 @@ export default function TimerScreen({ navigation }) {
       const now = new Date();
       const remain = Math.max(0, target - now);
       setCdDays(Math.floor(remain / 86400000));
-      AsyncStorage.getItem('kaoyan_study_start').then(v => {
+      AsyncStorage.getItem("kaoyan_study_start").then((v) => {
         if (v) {
           // 按自然日算，含起始当天(第1天)，不受设置时刻影响
           const st = new Date(v);
           const sMid = new Date(st.getFullYear(), st.getMonth(), st.getDate());
-          const nMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const nMid = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+          );
           setCdStudied(Math.floor((nMid - sMid) / 86400000) + 1);
         }
       });
     };
     refreshCd();
     const cdTimer = setInterval(refreshCd, 60000); // 每分钟更新天数
-    AsyncStorage.getItem('custom_durations').then(d => {
+    AsyncStorage.getItem("custom_durations").then((d) => {
       const v = d ? JSON.parse(d) : null;
       if (v) setCustomMin(v);
       const workSec = (v?.work || TIMER_MODES.work.minutes) * 60;
       // 倒计时启动应满圈：先把初始时长摆满
-      setTimeLeft(workSec); setTotalTime(workSec);
+      setTimeLeft(workSec);
+      setTotalTime(workSec);
       // 结算上次遗留的未结束会话，避免"僵尸会话"让圆环停在残缺/冻结状态
-      getActiveSession().then(a => {
+      getActiveSession().then((a) => {
         if (a) {
-          const el = Math.floor((Date.now() - new Date(a.start_time).getTime()) / 1000);
+          const el = Math.floor(
+            (Date.now() - new Date(a.start_time).getTime()) / 1000,
+          );
           // 时长内照实结算；明显被遗忘(超过一个学习时长)则丢弃，不污染统计
-          if (el > 0 && el <= workSec) stopSession(a.id); else deleteSession(a.id);
+          if (el > 0 && el <= workSec) stopSession(a.id);
+          else deleteSession(a.id);
         }
         setSessionId(null);
-        setTimeLeft(workSec); setTotalTime(workSec);
+        setTimeLeft(workSec);
+        setTotalTime(workSec);
       });
     });
-    AsyncStorage.getItem('daily_goal_minutes').then(v => {
+    AsyncStorage.getItem("daily_goal_minutes").then((v) => {
       if (v) {
         setDailyGoalMin(v);
-        setDailyGoalHours(String(Math.round(((parseInt(v) || DEFAULT_GOAL_MINUTES) / 60) * 10) / 10));
+        setDailyGoalHours(
+          String(
+            Math.round(((parseInt(v) || DEFAULT_GOAL_MINUTES) / 60) * 10) / 10,
+          ),
+        );
       }
     });
-    AsyncStorage.getItem('lock_level').then(v => { if (v) setLockLevel(v); });
-    AsyncStorage.getItem('lock_bind_study').then(v => { if (v !== null) setBindStudyLock(v === '1'); });
+    AsyncStorage.getItem("lock_level").then((v) => {
+      if (v) setLockLevel(v === "normal" ? "medium" : v);
+    });
+    AsyncStorage.getItem("lock_bind_study").then((v) => {
+      if (v !== null) setBindStudyLock(v === "1");
+    });
+    AsyncStorage.getItem("timer_strong_alert").then((v) =>
+      setStrongTimerAlert(v === "1"),
+    );
     isLockActive().then(setLocked);
-    AsyncStorage.getItem('accent_color').then(c => { if (c) setAccentColor(c); });
-    AsyncStorage.getItem('break_colors').then(d => { if (d) setBreakColors(JSON.parse(d)); });
-    AsyncStorage.getItem('wl_pkgs').then(d => { if (d) setWlPkgs(JSON.parse(d)); });
+    AsyncStorage.getItem("accent_color").then((c) => {
+      if (c) setAccentColor(c);
+    });
+    AsyncStorage.getItem("break_colors").then((d) => {
+      if (d) setBreakColors(JSON.parse(d));
+    });
+    AsyncStorage.getItem("wl_pkgs").then((d) => {
+      if (d) setWlPkgs(JSON.parse(d));
+    });
     getStreak().then(setStreak);
-    return () => { clearInterval(timerRef.current); clearInterval(cdTimer); };
+    return () => {
+      clearInterval(timerRef.current);
+      clearInterval(cdTimer);
+    };
   }, []);
 
-  const timerColor = mode === 'work' ? accentColor : (breakColors[mode] || COLORS.success);
-  const isLight = accentColor.length === 7 && parseInt(accentColor.slice(1,3),16) > 200 && parseInt(accentColor.slice(3,5),16) > 200 && parseInt(accentColor.slice(5,7),16) > 200;
-  const btnTextColor = isLight ? '#333' : '#fff';
-  const label = !isRunning ? (countUp ? '正计时 · 00:00' : '准备开始') : (isPaused ? '已暂停' : (mode === 'work' ? `${SUBJECTS[activeSubject]?.name}` : '休息中...'));
+  const timerColor =
+    mode === "work" ? accentColor : breakColors[mode] || COLORS.success;
+  const isLight =
+    accentColor.length === 7 &&
+    parseInt(accentColor.slice(1, 3), 16) > 200 &&
+    parseInt(accentColor.slice(3, 5), 16) > 200 &&
+    parseInt(accentColor.slice(5, 7), 16) > 200;
+  const btnTextColor = isLight ? "#333" : "#fff";
+  const label = !isRunning
+    ? countUp
+      ? "正计时 · 00:00"
+      : "准备开始"
+    : isPaused
+      ? "已暂停"
+      : mode === "work"
+        ? `${SUBJECTS[activeSubject]?.name}`
+        : "休息中...";
   // 圆环“要画多少”比例(0~1)，统一为 timeLeft/总时长：
   //  · 倒计时：timeLeft 是剩余 → 一开始满圈(1)，随时间排空(→0)
   //  · 正计时：timeLeft 是已计时 → 一开始空(0)，逐渐填满(封顶1)
   // 单一表达式且只依赖 timeLeft 与当前模式，避免启动/切换时进度条闪烁。
   const cfgSec = cfg.minutes * 60;
-  const ringProgress = cfgSec > 0 ? Math.min(1, Math.max(0, timeLeft) / cfgSec) : 0;
+  const ringProgress =
+    cfgSec > 0 ? Math.min(1, Math.max(0, timeLeft) / cfgSec) : 0;
 
   return (
-    <View style={[styles.wrap, { backgroundColor: 'transparent' }]}>
+    <View style={[styles.wrap, { backgroundColor: "transparent" }]}>
       {!bgUri && <DefaultBackdrop />}
       <View style={styles.hd}>
-        <TouchableOpacity onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
+        <TouchableOpacity
+          onPress={() => {
+            setEditMin({
+              work: String(customMin.work),
+              short: String(customMin.short),
+              long: String(customMin.long),
+            });
+            setShowSettings(true);
+          }}
+        >
           <Text style={styles.gear}>⚙️</Text>
         </TouchableOpacity>
         <Text style={styles.ttl}>📚 研途</Text>
-        <View style={styles.sb}><Text style={styles.sbt}>🔥 {streak}天</Text></View>
+        <View style={styles.sb}>
+          <Text style={styles.sbt}>🔥 {streak}天</Text>
+        </View>
       </View>
 
-      <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.bodyScroll}
+        contentContainerStyle={styles.body}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.focusCard}>
           <View style={styles.focusTop}>
             <View>
-              <Text style={styles.focusKicker}>{mode === 'work' ? '当前学习段' : '当前休息段'}</Text>
-              <Text style={styles.focusSubject}>{mode === 'work' ? SUBJECTS[activeSubject]?.name || '学习' : cfg.label.replace(/^[^\s]+ /, '')}</Text>
+              <Text style={styles.focusKicker}>
+                {mode === "work" ? "当前学习段" : "当前休息段"}
+              </Text>
+              <Text style={styles.focusSubject}>
+                {mode === "work"
+                  ? SUBJECTS[activeSubject]?.name || "学习"
+                  : cfg.label.replace(/^[^\s]+ /, "")}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.modeMini} onPress={() => { if (!isRunning) setCountUp(!countUp); }}>
-              <Text style={styles.modeMiniText}>{countUp ? '正计时' : '倒计时'}</Text>
+            <TouchableOpacity
+              style={styles.modeMini}
+              onPress={() => {
+                if (!isRunning) setCountUp(!countUp);
+              }}
+            >
+              <Text style={styles.modeMiniText}>
+                {countUp ? "正计时" : "倒计时"}
+              </Text>
             </TouchableOpacity>
           </View>
           <View style={styles.timerWrap}>
-            <TimerCircle timeLeft={timeLeft} progress={ringProgress} modeColor={timerColor} label={label} />
+            <TimerCircle
+              timeLeft={timeLeft}
+              progress={ringProgress}
+              modeColor={timerColor}
+              label={label}
+            />
           </View>
           <View style={styles.lockStateRow}>
-            <Text style={styles.lockStateText}>{locked ? '强力锁机中' : bindLabel(isRunning, locked)}</Text>
-            <Text style={styles.lockStateMeta}>{cfg.minutes} 分钟 · {countUp ? '自由记录' : '到点提醒'}</Text>
+            <Text style={styles.lockStateText}>
+              {locked
+                ? lockLevelLabel(lockLevel)
+                : bindLabel(isRunning, locked)}
+            </Text>
+            <Text style={styles.lockStateMeta}>
+              {cfg.minutes} 分钟 · {countUp ? "自由记录" : "到点提醒"}
+            </Text>
           </View>
           <View style={styles.examStrip}>
-            <TouchableOpacity style={styles.examCell} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={styles.examCell}
+              onPress={() => navigation.navigate("Countdown")}
+              activeOpacity={0.75}
+            >
               <Text style={styles.examText}>备考倒计时</Text>
-              <Text style={styles.examStrong}>{cdDays !== null ? `还有 ${cdDays} 天` : '未设置'}</Text>
-            </TouchableOpacity>
-            <View style={styles.examDivider} />
-            <TouchableOpacity style={styles.examCell} onPress={() => navigation.navigate('Countdown')} activeOpacity={0.75}>
-              <Text style={styles.examText}>已备考</Text>
-              <Text style={styles.examStrong}>{cdStudied !== null ? `${cdStudied} 天` : '--'}</Text>
+              <Text style={styles.examStrong}>
+                {cdDays !== null ? `还有 ${cdDays} 天` : "未设置"}
+              </Text>
             </TouchableOpacity>
             <View style={styles.examDivider} />
             <TouchableOpacity
               style={styles.examCell}
-              onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}
+              onPress={() => navigation.navigate("Countdown")}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.examText}>已备考</Text>
+              <Text style={styles.examStrong}>
+                {cdStudied !== null ? `${cdStudied} 天` : "--"}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.examDivider} />
+            <TouchableOpacity
+              style={styles.examCell}
+              onPress={() => {
+                setEditMin({
+                  work: String(customMin.work),
+                  short: String(customMin.short),
+                  long: String(customMin.long),
+                });
+                setShowSettings(true);
+              }}
               activeOpacity={0.75}
             >
               <Text style={styles.examText}>每日最低</Text>
-              <Text style={styles.examStrong}>{formatGoalHours(dailyGoalMin)}</Text>
+              <Text style={styles.examStrong}>
+                {formatGoalHours(dailyGoalMin)}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -409,22 +760,58 @@ export default function TimerScreen({ navigation }) {
         <View style={styles.metricRow}>
           <Metric value={formatDuration(todayTotal)} label="今日已学" />
           <Metric value={`${goalPct}%`} label="目标进度" />
-          <Metric value={locked ? '已开' : (bindStudyLock && lockLevel === 'strong' ? '学习即开' : '待开')} label="专注锁" />
+          <Metric
+            value={
+              locked
+                ? "已开"
+                : bindStudyLock && lockLevel === "strong"
+                  ? "学习即开"
+                  : "待开"
+            }
+            label="专注锁"
+          />
         </View>
 
         <View style={styles.panel}>
           <View style={styles.panelHead}>
             <Text style={styles.panelTitle}>学习模式</Text>
-            <TouchableOpacity onPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
+            <TouchableOpacity
+              onPress={() => {
+                setEditMin({
+                  work: String(customMin.work),
+                  short: String(customMin.short),
+                  long: String(customMin.long),
+                });
+                setShowSettings(true);
+              }}
+            >
               <Text style={styles.panelAction}>设置</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.modes}>
             {Object.entries(modes).map(([k, c]) => (
-              <TouchableOpacity key={k} style={[styles.mtab, mode === k && { backgroundColor: k === 'work' ? accentColor + '33' : COLORS.card2 }]}
+              <TouchableOpacity
+                key={k}
+                style={[
+                  styles.mtab,
+                  mode === k && {
+                    backgroundColor:
+                      k === "work" ? accentColor + "33" : COLORS.card2,
+                  },
+                ]}
                 onPress={() => switchMode(k)}
-                onLongPress={() => { setEditMin({ work: String(customMin.work), short: String(customMin.short), long: String(customMin.long) }); setShowSettings(true); }}>
-                <Text style={[styles.mt, mode === k && { color: '#fff' }]}>{c.label} · {c.minutes}′</Text>
+                onLongPress={() => {
+                  setEditMin({
+                    work: String(customMin.work),
+                    short: String(customMin.short),
+                    long: String(customMin.long),
+                  });
+                  setShowSettings(true);
+                }}
+              >
+                <Text style={[styles.mt, mode === k && { color: "#fff" }]}>
+                  {c.label} · {c.minutes}′
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -432,22 +819,39 @@ export default function TimerScreen({ navigation }) {
 
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>科目</Text>
-          <SubjectSelector activeSubject={activeSubject} onSelect={handleSubject} />
+          <SubjectSelector
+            activeSubject={activeSubject}
+            onSelect={handleSubject}
+          />
         </View>
 
         <View style={styles.panel}>
           <View style={styles.panelHead}>
             <Text style={styles.panelTitle}>下一项</Text>
-            <Text style={styles.panelAction}>每日计划</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Schedule")}
+              accessibilityLabel="打开每日计划"
+            >
+              <Text style={styles.panelAction}>每日计划 ›</Text>
+            </TouchableOpacity>
           </View>
           {nextPlanItem ? (
             <View style={styles.nextRow}>
               <View style={styles.nextTime}>
                 <Text style={styles.nextTimeText}>{nextPlanItem.start}</Text>
               </View>
-              <View style={[styles.nextMain, { borderLeftColor: nextPlanItem.color }]}>
-                <Text style={styles.nextName}>{nextPlanItem.icon} {nextPlanItem.name}</Text>
-                <Text style={styles.nextMeta}>{nextPlanItem.end || '待定'} 结束 · 建议绑定锁机</Text>
+              <View
+                style={[
+                  styles.nextMain,
+                  { borderLeftColor: nextPlanItem.color },
+                ]}
+              >
+                <Text style={styles.nextName}>
+                  {nextPlanItem.icon} {nextPlanItem.name}
+                </Text>
+                <Text style={styles.nextMeta}>
+                  {nextPlanItem.end || "待定"} 结束 · 建议绑定锁机
+                </Text>
               </View>
             </View>
           ) : (
@@ -456,170 +860,494 @@ export default function TimerScreen({ navigation }) {
         </View>
 
         <View style={styles.quickActions}>
-          <TouchableOpacity style={[styles.lockBtn, locked && styles.lockBtnOn]} onPress={async () => {
-            if (locked) { await unlockScreen(); setLocked(false); return; }
-            const hasAcc = await isAccessibilityEnabled();
-            if (!hasAcc) {
-              // 区分"系统开关假开启（更新后服务被杀）"和"确实没开"
-              const sysOn = await isAccessibilitySettingOn();
-              if (sysOn) {
-                Alert.alert('无障碍需重新激活',
-                  '系统显示「研途专注」已开启，但更新 App 后安卓杀掉了服务（开关是"假开")。\n\n请进入无障碍，把「研途专注」开关【关闭再重新打开】，然后回来再点锁机。',
-                  [
-                    { text: '去无障碍重开', onPress: openAccessibilitySettings },
-                    { text: '取消', style: 'cancel' },
-                  ]);
-              } else {
-                Alert.alert('开启专注锁（三步）', '小米/OPPO 用户需完成以下三步，否则锁机会失效：\n\n1️⃣ 无障碍 → 已下载的服务 → 研途专注\n2️⃣ 自启动 → 找到研途 → 允许\n3️⃣ 电池优化 → 选择研途 → 不优化', [
-                  { text: '1️⃣ 无障碍', onPress: openAccessibilitySettings },
-                  { text: '2️⃣ 自启动', onPress: openWhiteListSettings },
-                  { text: '3️⃣ 电池', onPress: openBatterySettings },
-                ]);
+          <TouchableOpacity
+            style={[styles.lockBtn, locked && styles.lockBtnOn]}
+            onPress={async () => {
+              if (locked) {
+                await unlockScreen();
+                setLocked(false);
+                return;
               }
-              return;
-            }
-            // Accessibility is on, but remind about remaining steps
-            Alert.alert('锁机已开启', '为确保小米/OPPO 不杀服务，建议也完成：\n\n🔋 电池优化 → 选研途 → 不优化\n🚀 自启动 → 找到研途 → 允许', [
-              { text: '🔋 电池优化', onPress: openBatterySettings },
-              { text: '🚀 自启动', onPress: openWhiteListSettings },
-              { text: '已全部设置好，开始锁机', onPress: async () => {
-                const result = await lockScreen();
-                if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
-                setLocked(true); Alert.alert('已锁定', '白名单外的App打开后自动返回桌面');
-              }},
-            ]);
-            return;
-            const result = await lockScreen();
-            if (result === 'none') { Alert.alert('模块未加载', '请重新安装最新版 APK'); return; }
-            setLocked(true); Alert.alert('已锁定', '白名单外的App打开后会立即弹回研途');
-          }}>
-            <Text style={[styles.lockBtnT, locked && { color: '#fff' }]}>{locked ? '🔓 解锁' : '🔒 锁机'}</Text>
+              const hasAcc = await isAccessibilityEnabled();
+              if (!hasAcc) {
+                // 区分"系统开关假开启（更新后服务被杀）"和"确实没开"
+                const sysOn = await isAccessibilitySettingOn();
+                if (sysOn) {
+                  Alert.alert(
+                    "无障碍需重新激活",
+                    '系统显示「研途专注」已开启，但更新 App 后安卓杀掉了服务（开关是"假开")。\n\n请进入无障碍，把「研途专注」开关【关闭再重新打开】，然后回来再点锁机。',
+                    [
+                      {
+                        text: "去无障碍重开",
+                        onPress: openAccessibilitySettings,
+                      },
+                      { text: "取消", style: "cancel" },
+                    ],
+                  );
+                } else {
+                  Alert.alert(
+                    "开启专注锁（三步）",
+                    "小米/OPPO 用户需完成以下三步，否则锁机会失效：\n\n1️⃣ 无障碍 → 已下载的服务 → 研途专注\n2️⃣ 自启动 → 找到研途 → 允许\n3️⃣ 电池优化 → 选择研途 → 不优化",
+                    [
+                      { text: "1️⃣ 无障碍", onPress: openAccessibilitySettings },
+                      { text: "2️⃣ 自启动", onPress: openWhiteListSettings },
+                      { text: "3️⃣ 电池", onPress: openBatterySettings },
+                    ],
+                  );
+                }
+                return;
+              }
+              const result = await lockScreen(lockLevel);
+              if (
+                ["none", "error", "accessibility-required"].includes(result)
+              ) {
+                Alert.alert("模块未加载", "请重新安装最新版 APK");
+                return;
+              }
+              setLocked(true);
+            }}
+          >
+            <Text style={[styles.lockBtnT, locked && { color: "#fff" }]}>
+              {locked ? "🔓 解锁" : "🔒 锁机"}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.lockBtn} onPress={async () => {
-            setAppsLoading(true); setShowApps(true);
-            const apps = await getInstalledApps();
-            setAppsList(apps || []); setAppsLoading(false);
-          }}>
+          <TouchableOpacity
+            style={styles.lockBtn}
+            onPress={async () => {
+              setAppsLoading(true);
+              setShowApps(true);
+              const apps = await getInstalledApps();
+              setAppsList(apps || []);
+              setAppsLoading(false);
+            }}
+          >
             <Text style={styles.lockBtnT}>📋 白名单</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.ctrls}>
-          <TouchableOpacity style={[styles.go, { backgroundColor: accentColor }, isRunning && !isPaused && { backgroundColor: COLORS.warning }]} onPress={() => { if (!isRunning || isPaused) doStart(); else doPause(); }}>
-            <Text style={[styles.goT, { color: btnTextColor }]}>{!isRunning ? '▶ 开始学习' : (isPaused ? '▶ 继续' : '⏸ 暂停')}</Text>
+          <TouchableOpacity
+            style={[
+              styles.go,
+              { backgroundColor: accentColor },
+              isRunning && !isPaused && { backgroundColor: COLORS.warning },
+            ]}
+            onPress={() => {
+              if (!isRunning || isPaused) doStart();
+              else doPause();
+            }}
+          >
+            <Text style={[styles.goT, { color: btnTextColor }]}>
+              {!isRunning ? "▶ 开始学习" : isPaused ? "▶ 继续" : "⏸ 暂停"}
+            </Text>
           </TouchableOpacity>
-          {isRunning && <TouchableOpacity style={styles.end} onPress={doStop}><Text style={styles.endT}>↺ 结束</Text></TouchableOpacity>}
+          {isRunning && (
+            <TouchableOpacity style={styles.end} onPress={doStop}>
+              <Text style={styles.endT}>↺ 结束</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {quote && isRunning && <Text style={styles.quoteText}>{quote}</Text>}
-        <Text style={styles.hint}>长按模式卡片修改时长 · ⚙️ 设置背景和更多</Text>
+        <Text style={styles.hint}>
+          长按模式卡片修改时长 · ⚙️ 设置背景和更多
+        </Text>
       </ScrollView>
 
       {/* Settings Modal */}
-      <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowSettings(false)}
+      >
         <View style={styles.overlay}>
           {/* 只有顶部空白区点击才关闭；面板本身是普通 View，不再用 Pressable 包裹，
               否则 Pressable 会抢走滑动手势，导致"空白处滑不动/不丝滑"。 */}
-          <Pressable style={{ flex: 1 }} onPress={() => setShowSettings(false)} />
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => setShowSettings(false)}
+          />
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>⚙️ 设置</Text>
 
-            <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
-            <Text style={styles.lbl}>⏱️ 时长（分钟）</Text>
-            {[{ k: 'work', lab: '📖', name: '学习', f: 'work' },{ k: 'short', lab: '☕', name: '短休', f: 'short' },{ k: 'long', lab: '😴', name: '长休', f: 'long' }].map(item => (
-              <View key={item.k} style={styles.dr}>
-                <Text style={styles.dl}>{item.lab} {item.name}</Text>
-                <TouchableOpacity onPress={() => setEditMin(p => ({ ...p, [item.f]: String(Math.max(1, (parseInt(p[item.f])||1)-5)) }))}><Text style={styles.db}>−5</Text></TouchableOpacity>
-                <TextInput style={styles.di} keyboardType="numeric" value={editMin[item.f]} onChangeText={t => setEditMin(p => ({ ...p, [item.f]: t }))} />
-                <TouchableOpacity onPress={() => setEditMin(p => ({ ...p, [item.f]: String((parseInt(p[item.f])||1)+5) }))}><Text style={styles.db}>+5</Text></TouchableOpacity>
-              </View>
-            ))}
-            <Text style={[styles.lbl, { marginTop: 10 }]}>🎯 每日最低学习时长（小时）</Text>
-            <View style={styles.dr}>
-              <Text style={styles.dl}>热力图达标线</Text>
-              <TouchableOpacity onPress={() => setDailyGoalHours(p => String(Math.max(0.5, Math.round(((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) - 0.5) * 10) / 10)))}><Text style={styles.db}>−0.5</Text></TouchableOpacity>
-              <TextInput style={styles.di} keyboardType="decimal-pad" value={dailyGoalHours} onChangeText={setDailyGoalHours} />
-              <TouchableOpacity onPress={() => setDailyGoalHours(p => String(Math.round(((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) + 0.5) * 10) / 10))}><Text style={styles.db}>+0.5</Text></TouchableOpacity>
-            </View>
-            <Text style={styles.goalHint}>当前等于 {Math.max(30, Math.round((parseFloat(String(dailyGoalHours).replace(',', '.')) || DEFAULT_GOAL_MINUTES / 60) * 60))} 分钟，热力图按这个达标线变色。</Text>
-            <TouchableOpacity style={styles.sv} onPress={() => { saveDurations(); setShowSettings(false); }}><Text style={styles.svT}>保存设置</Text></TouchableOpacity>
-
-            <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 学习圆环色</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {[COLORS.accent, '#4A90D9', '#5CB85C', '#9B59B6', '#f39c12', '#1abc9c', '#e91e63', '#00bcd4', '#ff9800', '#607d8b', '#ffffff', '#ff6b9d'].map(c => (
-                <TouchableOpacity key={c}
-                  style={[styles.colorSwatch, { backgroundColor: c }, accentColor === c && { borderWidth: 3, borderColor: '#fff' }]}
-                  onPress={() => { setAccentColor(c); AsyncStorage.setItem('accent_color', c); }}
-                />
-              ))}
-            </View>
-
-            {[{ k: 'short', lab: '☕ 短休圆环色' }, { k: 'long', lab: '😴 长休圆环色' }].map(row => (
-              <View key={row.k}>
-                <Text style={[styles.lbl]}>{row.lab}</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                  {['#5CB85C', '#4A90D9', '#1abc9c', '#00bcd4', '#9B59B6', '#f39c12', '#ff9800', '#607d8b', '#27ae60', '#3498db', '#ffffff', '#ff6b9d'].map(c => (
-                    <TouchableOpacity key={c}
-                      style={[styles.colorSwatch, { backgroundColor: c }, breakColors[row.k] === c && { borderWidth: 3, borderColor: '#fff' }]}
-                      onPress={() => {
-                        const next = { ...breakColors, [row.k]: c };
-                        setBreakColors(next); AsyncStorage.setItem('break_colors', JSON.stringify(next));
-                      }}
-                    />
-                  ))}
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
+              <Text style={styles.lbl}>⏱️ 时长（分钟）</Text>
+              {[
+                { k: "work", lab: "📖", name: "学习", f: "work" },
+                { k: "short", lab: "☕", name: "短休", f: "short" },
+                { k: "long", lab: "😴", name: "长休", f: "long" },
+              ].map((item) => (
+                <View key={item.k} style={styles.dr}>
+                  <Text style={styles.dl}>
+                    {item.lab} {item.name}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setEditMin((p) => ({
+                        ...p,
+                        [item.f]: String(
+                          Math.max(1, (parseInt(p[item.f]) || 1) - 5),
+                        ),
+                      }))
+                    }
+                  >
+                    <Text style={styles.db}>−5</Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.di}
+                    keyboardType="numeric"
+                    value={editMin[item.f]}
+                    onChangeText={(t) =>
+                      setEditMin((p) => ({ ...p, [item.f]: t }))
+                    }
+                  />
+                  <TouchableOpacity
+                    onPress={() =>
+                      setEditMin((p) => ({
+                        ...p,
+                        [item.f]: String((parseInt(p[item.f]) || 1) + 5),
+                      }))
+                    }
+                  >
+                    <Text style={styles.db}>+5</Text>
+                  </TouchableOpacity>
                 </View>
+              ))}
+              <Text style={[styles.lbl, { marginTop: 10 }]}>
+                🎯 每日最低学习时长（小时）
+              </Text>
+              <View style={styles.dr}>
+                <Text style={styles.dl}>热力图达标线</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setDailyGoalHours((p) =>
+                      String(
+                        Math.max(
+                          0.5,
+                          Math.round(
+                            ((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) -
+                              0.5) *
+                              10,
+                          ) / 10,
+                        ),
+                      ),
+                    )
+                  }
+                >
+                  <Text style={styles.db}>−0.5</Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.di}
+                  keyboardType="decimal-pad"
+                  value={dailyGoalHours}
+                  onChangeText={setDailyGoalHours}
+                />
+                <TouchableOpacity
+                  onPress={() =>
+                    setDailyGoalHours((p) =>
+                      String(
+                        Math.round(
+                          ((parseFloat(p) || DEFAULT_GOAL_MINUTES / 60) + 0.5) *
+                            10,
+                        ) / 10,
+                      ),
+                    )
+                  }
+                >
+                  <Text style={styles.db}>+0.5</Text>
+                </TouchableOpacity>
               </View>
-            ))}
+              <Text style={styles.goalHint}>
+                当前等于{" "}
+                {Math.max(
+                  30,
+                  Math.round(
+                    (parseFloat(String(dailyGoalHours).replace(",", ".")) ||
+                      DEFAULT_GOAL_MINUTES / 60) * 60,
+                  ),
+                )}{" "}
+                分钟，热力图按这个达标线变色。
+              </Text>
+              <TouchableOpacity
+                style={styles.sv}
+                onPress={() => {
+                  saveDurations();
+                  setShowSettings(false);
+                }}
+              >
+                <Text style={styles.svT}>保存设置</Text>
+              </TouchableOpacity>
 
-            <Text style={[styles.lbl]}>🔔 提醒</Text>
-            <TouchableOpacity style={styles.notifBtn} onPress={openNotificationSettings}>
-              <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
-              <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.notifBtn, { marginTop: 8 }]} onPress={openFullScreenIntentSettings}>
-              <Text style={styles.notifBtnT}>允许全屏通知（息屏亮屏强提醒）</Text>
-              <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
-            </TouchableOpacity>
+              <Text style={[styles.lbl, { marginTop: 20 }]}>🎨 学习圆环色</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                {[
+                  COLORS.accent,
+                  "#4A90D9",
+                  "#5CB85C",
+                  "#9B59B6",
+                  "#f39c12",
+                  "#1abc9c",
+                  "#e91e63",
+                  "#00bcd4",
+                  "#ff9800",
+                  "#607d8b",
+                  "#ffffff",
+                  "#ff6b9d",
+                ].map((c) => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[
+                      styles.colorSwatch,
+                      { backgroundColor: c },
+                      accentColor === c && {
+                        borderWidth: 3,
+                        borderColor: "#fff",
+                      },
+                    ]}
+                    onPress={() => {
+                      setAccentColor(c);
+                      AsyncStorage.setItem("accent_color", c);
+                    }}
+                  />
+                ))}
+              </View>
 
-            <Text style={[styles.lbl, { marginTop: 16 }]}>🖼️ 背景</Text>
-            {bgUri ? <Image source={bgUri} style={styles.prev} contentFit="cover" /> : <View style={[styles.prev, { backgroundColor: COLORS.card2, justifyContent: 'center', alignItems: 'center' }]}><Text style={{ color: COLORS.text2 }}>未设置</Text></View>}
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity style={styles.bgb} onPress={pickBg}><Text style={styles.bgbT}>📁 选择图片</Text></TouchableOpacity>
-              {bgUri && <TouchableOpacity style={[styles.bgb, { backgroundColor: COLORS.lock }]} onPress={resetBg}><Text style={styles.bgbT}>↺ 恢复默认</Text></TouchableOpacity>}
-            </View>
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 14 }} onPress={() => setShowSettings(false)}><Text style={{ color: COLORS.text2 }}>关闭</Text></TouchableOpacity>
-            <Text style={{ color: COLORS.text2, textAlign: 'center', fontSize: 11, opacity: 0.6, paddingBottom: 8 }}>研途 · 版本 {APP_VERSION_NAME} ({APP_VERSION_CODE})</Text>
+              {[
+                { k: "short", lab: "☕ 短休圆环色" },
+                { k: "long", lab: "😴 长休圆环色" },
+              ].map((row) => (
+                <View key={row.k}>
+                  <Text style={[styles.lbl]}>{row.lab}</Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginBottom: 12,
+                    }}
+                  >
+                    {[
+                      "#5CB85C",
+                      "#4A90D9",
+                      "#1abc9c",
+                      "#00bcd4",
+                      "#9B59B6",
+                      "#f39c12",
+                      "#ff9800",
+                      "#607d8b",
+                      "#27ae60",
+                      "#3498db",
+                      "#ffffff",
+                      "#ff6b9d",
+                    ].map((c) => (
+                      <TouchableOpacity
+                        key={c}
+                        style={[
+                          styles.colorSwatch,
+                          { backgroundColor: c },
+                          breakColors[row.k] === c && {
+                            borderWidth: 3,
+                            borderColor: "#fff",
+                          },
+                        ]}
+                        onPress={() => {
+                          const next = { ...breakColors, [row.k]: c };
+                          setBreakColors(next);
+                          AsyncStorage.setItem(
+                            "break_colors",
+                            JSON.stringify(next),
+                          );
+                        }}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ))}
+
+              <Text style={[styles.lbl]}>🔔 提醒</Text>
+              <TouchableOpacity
+                style={styles.notifBtn}
+                onPress={openNotificationSettings}
+              >
+                <Text style={styles.notifBtnT}>开启横幅/悬浮通知</Text>
+                <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
+              </TouchableOpacity>
+              <View style={styles.settingToggleRow}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.notifBtnT}>息屏强提醒</Text>
+                  <Text style={styles.settingToggleHint}>
+                    计时结束时亮屏并加强震动，默认关闭
+                  </Text>
+                </View>
+                <Switch
+                  value={strongTimerAlert}
+                  onValueChange={(value) => {
+                    setStrongTimerAlert(value);
+                    AsyncStorage.setItem(
+                      "timer_strong_alert",
+                      value ? "1" : "0",
+                    );
+                  }}
+                  trackColor={{ false: COLORS.card2, true: accentColor }}
+                />
+              </View>
+              {strongTimerAlert && (
+                <TouchableOpacity
+                  style={[styles.notifBtn, { marginTop: 8 }]}
+                  onPress={openFullScreenIntentSettings}
+                >
+                  <Text style={styles.notifBtnT}>允许全屏通知权限</Text>
+                  <Text style={styles.notifBtnArrow}>去系统设置 ›</Text>
+                </TouchableOpacity>
+              )}
+
+              <Text style={[styles.lbl, { marginTop: 16 }]}>🖼️ 背景</Text>
+              {bgUri ? (
+                <Image source={bgUri} style={styles.prev} contentFit="cover" />
+              ) : (
+                <View
+                  style={[
+                    styles.prev,
+                    {
+                      backgroundColor: COLORS.card2,
+                      justifyContent: "center",
+                      alignItems: "center",
+                    },
+                  ]}
+                >
+                  <Text style={{ color: COLORS.text2 }}>未设置</Text>
+                </View>
+              )}
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity style={styles.bgb} onPress={pickBg}>
+                  <Text style={styles.bgbT}>📁 选择图片</Text>
+                </TouchableOpacity>
+                {bgUri && (
+                  <TouchableOpacity
+                    style={[styles.bgb, { backgroundColor: COLORS.lock }]}
+                    onPress={resetBg}
+                  >
+                    <Text style={styles.bgbT}>↺ 恢复默认</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TouchableOpacity
+                style={{ alignItems: "center", paddingVertical: 14 }}
+                onPress={() => setShowSettings(false)}
+              >
+                <Text style={{ color: COLORS.text2 }}>关闭</Text>
+              </TouchableOpacity>
+              <Text
+                style={{
+                  color: COLORS.text2,
+                  textAlign: "center",
+                  fontSize: 11,
+                  opacity: 0.6,
+                  paddingBottom: 8,
+                }}
+              >
+                研途 · 版本 {APP_VERSION_NAME} ({APP_VERSION_CODE})
+              </Text>
             </ScrollView>
           </View>
         </View>
       </Modal>
 
       {/* Whitelist Modal */}
-      <Modal visible={showApps} animationType="slide" transparent onRequestClose={() => setShowApps(false)}>
+      <Modal
+        visible={showApps}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowApps(false)}
+      >
         <Pressable style={styles.overlay} onPress={() => setShowApps(false)}>
-          <View style={[styles.sheet, { maxHeight: '80%' }]}>
+          <View style={[styles.sheet, { maxHeight: "80%" }]}>
             <View style={styles.handle} />
             <Text style={styles.sheetT}>📋 白名单 App</Text>
             <ScrollView style={{ maxHeight: 350 }}>
-              {appsLoading ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>⏳ 读取已安装应用...</Text> :
-               appsList.length === 0 ? <Text style={{ color: COLORS.text2, textAlign: 'center', padding: 20 }}>未获取到应用列表</Text> :
+              {appsLoading ? (
+                <Text
+                  style={{
+                    color: COLORS.text2,
+                    textAlign: "center",
+                    padding: 20,
+                  }}
+                >
+                  ⏳ 读取已安装应用...
+                </Text>
+              ) : appsList.length === 0 ? (
+                <Text
+                  style={{
+                    color: COLORS.text2,
+                    textAlign: "center",
+                    padding: 20,
+                  }}
+                >
+                  未获取到应用列表
+                </Text>
+              ) : (
                 appsList.map((a, i) => (
-                  <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 }}
+                  <TouchableOpacity
+                    key={i}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 8,
+                      gap: 8,
+                    }}
                     onPress={async () => {
-                      const next = wlPkgs.includes(a.pkg) ? wlPkgs.filter(x => x !== a.pkg) : [...wlPkgs, a.pkg];
+                      const next = wlPkgs.includes(a.pkg)
+                        ? wlPkgs.filter((x) => x !== a.pkg)
+                        : [...wlPkgs, a.pkg];
                       setWlPkgs(next);
                       await saveWhitelist(next);
-                    }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: wlPkgs.includes(a.pkg) ? accentColor : COLORS.text2, backgroundColor: wlPkgs.includes(a.pkg) ? accentColor : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {wlPkgs.includes(a.pkg) && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        borderWidth: 2,
+                        borderColor: wlPkgs.includes(a.pkg)
+                          ? accentColor
+                          : COLORS.text2,
+                        backgroundColor: wlPkgs.includes(a.pkg)
+                          ? accentColor
+                          : "transparent",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {wlPkgs.includes(a.pkg) && (
+                        <Text style={{ color: "#fff", fontSize: 12 }}>✓</Text>
+                      )}
                     </View>
-                    <Text style={{ flex: 1, fontSize: 13, color: COLORS.text }}>{a.name}</Text>
+                    <Text style={{ flex: 1, fontSize: 13, color: COLORS.text }}>
+                      {a.name}
+                    </Text>
                   </TouchableOpacity>
                 ))
-              }
+              )}
             </ScrollView>
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setShowApps(false)}>
+            <TouchableOpacity
+              style={{ alignItems: "center", paddingVertical: 12 }}
+              onPress={() => setShowApps(false)}
+            >
               <Text style={{ color: COLORS.text2 }}>关闭</Text>
             </TouchableOpacity>
           </View>
@@ -630,9 +1358,15 @@ export default function TimerScreen({ navigation }) {
 }
 
 function bindLabel(isRunning, locked) {
-  if (locked) return '锁机已绑定';
-  if (isRunning) return '建议开启锁机';
-  return '准备开始';
+  if (locked) return "锁机已绑定";
+  if (isRunning) return "建议开启锁机";
+  return "准备开始";
+}
+
+function lockLevelLabel(level) {
+  if (level === "light") return "轻度提醒中";
+  if (level === "medium" || level === "normal") return "中度拦截中";
+  return "强力锁机中";
 }
 
 function formatGoalHours(minValue) {
@@ -644,16 +1378,22 @@ function formatGoalHours(minValue) {
 function findNextPlanItem(plan) {
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const sorted = [...(plan || [])].sort((a, b) => (a.start || '').localeCompare(b.start || ''));
-  const item = sorted.find(p => {
+  const sorted = [...(plan || [])].sort((a, b) =>
+    (a.start || "").localeCompare(b.start || ""),
+  );
+  const item = sorted.find((p) => {
     if (!p.start) return false;
-    const [h, m] = p.start.split(':').map(Number);
+    const [h, m] = p.start.split(":").map(Number);
     return h * 60 + m > nowMin;
   });
   if (!item) return null;
   const subj = item.customName
-    ? { icon: '📝', name: item.customName, color: COLORS.accent }
-    : SUBJECTS[item.subject] || { icon: '📚', name: '学习', color: COLORS.accent };
+    ? { icon: "📝", name: item.customName, color: COLORS.accent }
+    : SUBJECTS[item.subject] || {
+        icon: "📚",
+        name: "学习",
+        color: COLORS.accent,
+      };
   return { ...item, ...subj };
 }
 
@@ -667,85 +1407,336 @@ function Metric({ value, label }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: '#0d0f1a' },
+  wrap: { flex: 1, backgroundColor: "#0d0f1a" },
   bodyScroll: { flex: 1 },
   body: { paddingHorizontal: 16, paddingBottom: 32 },
-  hd: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 12 },
-  cdBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 20, backgroundColor: 'rgba(255,107,107,0.08)', borderBottomWidth: 1, borderBottomColor: 'rgba(255,107,107,0.12)' },
-  cdBarText: { fontSize: 12, color: 'rgba(255,180,180,0.85)', fontWeight: '600', letterSpacing: 0.3 },
-  cdArrow: { fontSize: 14, color: 'rgba(255,180,180,0.5)', marginLeft: 6 },
-  timerWrap: { marginVertical: 8, alignItems: 'center' },
+  hd: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 44 : 56,
+    paddingBottom: 12,
+  },
+  cdBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(255,107,107,0.08)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,107,107,0.12)",
+  },
+  cdBarText: {
+    fontSize: 12,
+    color: "rgba(255,180,180,0.85)",
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  cdArrow: { fontSize: 14, color: "rgba(255,180,180,0.5)", marginLeft: 6 },
+  timerWrap: { marginVertical: 8, alignItems: "center" },
   gear: { fontSize: 22, color: COLORS.text2 },
-  ttl: { fontSize: 20, fontWeight: '700', color: COLORS.text },
-  sb: { backgroundColor: '#e74c3c', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
-  sbt: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  focusCard: { backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  focusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  focusKicker: { color: COLORS.text2, fontSize: 12, fontWeight: '700' },
-  focusSubject: { color: COLORS.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
-  modeMini: { borderRadius: 999, backgroundColor: COLORS.card2, paddingHorizontal: 12, paddingVertical: 7 },
-  modeMiniText: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
-  lockStateRow: { alignItems: 'center', paddingTop: 4 },
-  lockStateText: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
+  ttl: { fontSize: 20, fontWeight: "700", color: COLORS.text },
+  sb: {
+    backgroundColor: "#e74c3c",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  sbt: { color: "#fff", fontSize: 11, fontWeight: "600" },
+  focusCard: {
+    backgroundColor: "rgba(255,255,255,0.075)",
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  focusTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  focusKicker: { color: COLORS.text2, fontSize: 12, fontWeight: "700" },
+  focusSubject: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  modeMini: {
+    borderRadius: 999,
+    backgroundColor: COLORS.card2,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  modeMiniText: { color: COLORS.text, fontSize: 12, fontWeight: "700" },
+  lockStateRow: { alignItems: "center", paddingTop: 4 },
+  lockStateText: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
   lockStateMeta: { color: COLORS.text2, fontSize: 11, marginTop: 4 },
-  examStrip: { marginTop: 14, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 16, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  examCell: { flex: 1, alignItems: 'center' },
-  examText: { color: COLORS.text2, fontSize: 10, fontWeight: '800', marginBottom: 5 },
-  examStrong: { color: COLORS.text, fontSize: 14, fontWeight: '900' },
-  examDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.09)' },
-  metricRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  metric: { flex: 1, backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  metricValue: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
-  metricLabel: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 5 },
-  panel: { backgroundColor: 'rgba(255,255,255,0.075)', borderRadius: 16, padding: 12, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  panelHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  panelTitle: { color: COLORS.text2, fontSize: 12, fontWeight: '800', marginBottom: 8 },
-  panelAction: { color: COLORS.accent, fontSize: 12, fontWeight: '800' },
-  quickActions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10 },
-  nextRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
-  nextTime: { width: 54, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  nextTimeText: { color: COLORS.text, fontSize: 13, fontWeight: '900' },
-  nextMain: { flex: 1, borderLeftWidth: 3, paddingLeft: 10, justifyContent: 'center' },
-  nextName: { color: COLORS.text, fontSize: 14, fontWeight: '900' },
-  nextMeta: { color: COLORS.text2, fontSize: 11, fontWeight: '700', marginTop: 5 },
-  nextEmpty: { color: COLORS.text2, fontSize: 12, textAlign: 'center', paddingVertical: 10 },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: COLORS.card, borderRadius: 16 },
-  toggleT: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  examStrip: {
+    marginTop: 14,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  examCell: { flex: 1, alignItems: "center" },
+  examText: {
+    color: COLORS.text2,
+    fontSize: 10,
+    fontWeight: "800",
+    marginBottom: 5,
+  },
+  examStrong: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
+  examDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "rgba(255,255,255,0.09)",
+  },
+  metricRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  metric: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.075)",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  metricValue: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
+  metricLabel: {
+    color: COLORS.text2,
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 5,
+  },
+  panel: {
+    backgroundColor: "rgba(255,255,255,0.075)",
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  panelHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  panelTitle: {
+    color: COLORS.text2,
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  panelAction: { color: COLORS.accent, fontSize: 12, fontWeight: "800" },
+  quickActions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 10,
+  },
+  nextRow: { flexDirection: "row", gap: 10, alignItems: "stretch" },
+  nextTime: {
+    width: 54,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nextTimeText: { color: COLORS.text, fontSize: 13, fontWeight: "900" },
+  nextMain: {
+    flex: 1,
+    borderLeftWidth: 3,
+    paddingLeft: 10,
+    justifyContent: "center",
+  },
+  nextName: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
+  nextMeta: {
+    color: COLORS.text2,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 5,
+  },
+  nextEmpty: {
+    color: COLORS.text2,
+    fontSize: 12,
+    textAlign: "center",
+    paddingVertical: 10,
+  },
+  toggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+  },
+  toggleT: { fontSize: 13, fontWeight: "600", color: COLORS.text },
   toggleHint: { fontSize: 11, color: COLORS.text2 },
-  modes: { flexDirection: 'row', backgroundColor: COLORS.card2, borderRadius: 12, padding: 3, gap: 2 },
-  mtab: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center' },
+  modes: {
+    flexDirection: "row",
+    backgroundColor: COLORS.card2,
+    borderRadius: 12,
+    padding: 3,
+    gap: 2,
+  },
+  mtab: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: "center" },
   mtabOn: { backgroundColor: COLORS.card2 },
-  mt: { fontSize: 11, fontWeight: '600', color: COLORS.text2 },
-  mtMin: { fontSize: 18, fontWeight: '800', color: COLORS.text2, marginTop: 2 },
-  mtOn: { color: '#fff' },
-  hint: { fontSize: 11, color: COLORS.text2, textAlign: 'center', marginTop: 16, opacity: 0.6 },
-  quoteText: { fontSize: 12, color: COLORS.text2, textAlign: 'center', marginTop: 4, opacity: 0.7, fontStyle: 'italic', paddingHorizontal: 30 },
-  ctrls: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 14, gap: 10 },
+  mt: { fontSize: 11, fontWeight: "600", color: COLORS.text2 },
+  mtMin: { fontSize: 18, fontWeight: "800", color: COLORS.text2, marginTop: 2 },
+  mtOn: { color: "#fff" },
+  hint: {
+    fontSize: 11,
+    color: COLORS.text2,
+    textAlign: "center",
+    marginTop: 16,
+    opacity: 0.6,
+  },
+  quoteText: {
+    fontSize: 12,
+    color: COLORS.text2,
+    textAlign: "center",
+    marginTop: 4,
+    opacity: 0.7,
+    fontStyle: "italic",
+    paddingHorizontal: 30,
+  },
+  ctrls: {
+    flexDirection: "row",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 10,
+  },
   go: { paddingVertical: 14, paddingHorizontal: 44, borderRadius: 30 },
   pause: { backgroundColor: COLORS.warning },
-  goT: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  end: { backgroundColor: COLORS.card, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 30 },
+  goT: { color: "#fff", fontSize: 17, fontWeight: "600" },
+  end: {
+    backgroundColor: COLORS.card,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 30,
+  },
   endT: { color: COLORS.text2, fontSize: 14 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: COLORS.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' },
-  handle: { width: 36, height: 4, backgroundColor: COLORS.card2, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
-  sheetT: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 14 },
-  lbl: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 8 },
-  dr: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6 },
-  dl: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.text },
-  db: { fontSize: 16, fontWeight: '700', color: COLORS.accent, paddingHorizontal: 8 },
-  di: { backgroundColor: COLORS.bg, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, fontSize: 18, fontWeight: '700', color: COLORS.text, textAlign: 'center', width: 60, borderWidth: 1, borderColor: COLORS.card2 },
-  goalHint: { color: COLORS.text2, fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 10 },
-  sv: { backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: 12, alignItems: 'center', marginTop: 6 },
-  svT: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  prev: { width: '100%', height: 120, borderRadius: 12, marginBottom: 8 },
-  bgb: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  bgbT: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: "85%",
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    backgroundColor: COLORS.card2,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 18,
+  },
+  sheetT: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginBottom: 14,
+  },
+  lbl: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text2,
+    marginBottom: 8,
+  },
+  dr: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 6 },
+  dl: { flex: 1, fontSize: 14, fontWeight: "600", color: COLORS.text },
+  db: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: COLORS.accent,
+    paddingHorizontal: 8,
+  },
+  di: {
+    backgroundColor: COLORS.bg,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    textAlign: "center",
+    width: 60,
+    borderWidth: 1,
+    borderColor: COLORS.card2,
+  },
+  goalHint: {
+    color: COLORS.text2,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: -4,
+    marginBottom: 10,
+  },
+  sv: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 6,
+  },
+  svT: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  prev: { width: "100%", height: 120, borderRadius: 12, marginBottom: 8 },
+  bgb: {
+    flex: 1,
+    backgroundColor: COLORS.card2,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  bgbT: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
   colorSwatch: { width: 36, height: 36, borderRadius: 18 },
-  notifBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.card2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
-  notifBtnT: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  notifBtnArrow: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
-  lockBtn: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.lock, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 },
+  notifBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: COLORS.card2,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  notifBtnT: { fontSize: 14, fontWeight: "600", color: COLORS.text },
+  notifBtnArrow: { fontSize: 13, color: COLORS.accent, fontWeight: "600" },
+  settingToggleRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.card2,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  settingToggleHint: {
+    color: COLORS.text2,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  lockBtn: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.lock,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22,
+  },
   lockBtnOn: { backgroundColor: COLORS.success, borderColor: COLORS.success },
-  lockBtnT: { color: COLORS.lock, fontSize: 13, fontWeight: '600' },
+  lockBtnT: { color: COLORS.lock, fontSize: 13, fontWeight: "600" },
 });

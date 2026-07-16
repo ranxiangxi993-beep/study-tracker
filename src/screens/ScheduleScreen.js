@@ -1,13 +1,24 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform, TextInput, Pressable } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import { SUBJECTS, COLORS } from '../constants';
-import { useBg } from '../../App';
-import { syncPlanNotifications } from '../notify';
-import DefaultBackdrop from '../components/DefaultBackdrop';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  Modal,
+  Platform,
+  TextInput,
+  Pressable,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import { SUBJECTS, COLORS } from "../constants";
+import { useBg } from "../../App";
+import { syncPlanNotifications } from "../notify";
+import DefaultBackdrop from "../components/DefaultBackdrop";
 
-const STORAGE_KEY = 'daily_plan';
+const STORAGE_KEY = "daily_plan";
 
 export default function ScheduleScreen() {
   const { bgUri } = useBg();
@@ -19,17 +30,17 @@ export default function ScheduleScreen() {
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(data => {
+    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
       if (data) setPlan(JSON.parse(data));
     });
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      setTick(t => t + 1);
-      const id = setInterval(() => setTick(t => t + 1), 30000);
+      setTick((t) => t + 1);
+      const id = setInterval(() => setTick((t) => t + 1), 30000);
       return () => clearInterval(id);
-    }, [])
+    }, []),
   );
 
   const savePlan = async (newPlan) => {
@@ -40,8 +51,33 @@ export default function ScheduleScreen() {
   };
 
   const handleSaveItem = (item) => {
+    const toMinutes = (value) => {
+      const [hour, minute] = value.split(":").map(Number);
+      return hour * 60 + minute;
+    };
+    const startMin = toMinutes(item.start);
+    const endMin = toMinutes(item.end);
+    if (endMin <= startMin) {
+      Alert.alert("时间有误", "结束时间需要晚于开始时间。");
+      return;
+    }
+    const conflict = plan.find((p) => {
+      if (editing && p.id === editing.id) return false;
+      return (
+        startMin < toMinutes(p.end || "23:59") && endMin > toMinutes(p.start)
+      );
+    });
+    if (conflict) {
+      const name =
+        conflict.customName || SUBJECTS[conflict.subject]?.name || "已有计划";
+      Alert.alert(
+        "时间重叠",
+        `${item.start}-${item.end} 与「${name}」重叠，请先调整时间。`,
+      );
+      return;
+    }
     const next = editing
-      ? plan.map(p => p.id === editing.id ? { ...item, id: editing.id } : p)
+      ? plan.map((p) => (p.id === editing.id ? { ...item, id: editing.id } : p))
       : [...plan, { ...item, id: Date.now() }];
     savePlan(next.sort((a, b) => a.start.localeCompare(b.start)));
     setShowEditor(false);
@@ -49,39 +85,51 @@ export default function ScheduleScreen() {
   };
 
   const handleDelete = (id) => {
-    Alert.alert('删除', '确定删除这个时间安排？', [
-      { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => savePlan(plan.filter(p => p.id !== id)) },
+    Alert.alert("删除", "确定删除这个时间安排？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: () => savePlan(plan.filter((p) => p.id !== id)),
+      },
     ]);
   };
 
   // Get today's schedule using this daily plan
-  const todayPlan = plan.sort((a, b) => a.start.localeCompare(b.start));
+  const todayPlan = [...plan].sort((a, b) => a.start.localeCompare(b.start));
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const doneCount = todayPlan.filter(item => {
-    const [eh, em] = (item.end || '23:59').split(':').map(Number);
+  const doneCount = todayPlan.filter((item) => {
+    const [eh, em] = (item.end || "23:59").split(":").map(Number);
     return nowMin >= eh * 60 + em;
   }).length;
-  const currentItem = todayPlan.find(item => {
-    const [sh, sm] = item.start.split(':').map(Number);
-    const [eh, em] = (item.end || '23:59').split(':').map(Number);
+  const currentItem = todayPlan.find((item) => {
+    const [sh, sm] = item.start.split(":").map(Number);
+    const [eh, em] = (item.end || "23:59").split(":").map(Number);
     return nowMin >= sh * 60 + sm && nowMin < eh * 60 + em;
   });
-  const nextItem = todayPlan.find(item => {
-    const [sh, sm] = item.start.split(':').map(Number);
+  const nextItem = todayPlan.find((item) => {
+    const [sh, sm] = item.start.split(":").map(Number);
     return sh * 60 + sm > nowMin;
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <View style={[styles.container, { backgroundColor: "transparent" }]}>
       {!bgUri && <DefaultBackdrop />}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>今日计划</Text>
           <Text style={styles.subtitle}>固定日程 · 到点提醒</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => { setEditing(null); setShowEditor(true); }}>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => {
+            setEditing(null);
+            setShowEditor(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="添加每日计划"
+        >
           <Text style={styles.addBtnText}>+ 添加</Text>
         </TouchableOpacity>
       </View>
@@ -92,15 +140,32 @@ export default function ScheduleScreen() {
             <View>
               <Text style={styles.overviewLabel}>当前</Text>
               <Text style={styles.overviewTitle}>
-                {currentItem ? (currentItem.customName || SUBJECTS[currentItem.subject]?.name || '学习中') : '暂无进行中'}
+                {currentItem
+                  ? currentItem.customName ||
+                    SUBJECTS[currentItem.subject]?.name ||
+                    "学习中"
+                  : "暂无进行中"}
               </Text>
             </View>
-            <Text style={styles.overviewBadge}>{doneCount}/{todayPlan.length || 0}</Text>
+            <Text style={styles.overviewBadge}>
+              {doneCount}/{todayPlan.length || 0}
+            </Text>
           </View>
           <View style={styles.overviewMetrics}>
-            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>{todayPlan.length}</Text><Text style={styles.metricText}>计划项</Text></View>
-            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>{nextItem?.start || '--:--'}</Text><Text style={styles.metricText}>下一项</Text></View>
-            <View style={styles.overviewMetric}><Text style={styles.metricStrong}>合并</Text><Text style={styles.metricText}>同分钟提醒</Text></View>
+            <View style={styles.overviewMetric}>
+              <Text style={styles.metricStrong}>{todayPlan.length}</Text>
+              <Text style={styles.metricText}>计划项</Text>
+            </View>
+            <View style={styles.overviewMetric}>
+              <Text style={styles.metricStrong}>
+                {nextItem?.start || "--:--"}
+              </Text>
+              <Text style={styles.metricText}>下一项</Text>
+            </View>
+            <View style={styles.overviewMetric}>
+              <Text style={styles.metricStrong}>合并</Text>
+              <Text style={styles.metricText}>同分钟提醒</Text>
+            </View>
           </View>
         </View>
 
@@ -109,14 +174,18 @@ export default function ScheduleScreen() {
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>📝</Text>
             <Text style={styles.emptyTitle}>还没有每日计划</Text>
-            <Text style={styles.emptySub}>点击右上角「+ 添加」设置你的每日学习安排</Text>
+            <Text style={styles.emptySub}>
+              点击右上角「+ 添加」设置你的每日学习安排
+            </Text>
           </View>
         ) : (
           todayPlan.map((item, i) => {
-            const subj = item.customName ? { icon: '📝', name: item.customName, color: COLORS.accent } : SUBJECTS[item.subject];
+            const subj = item.customName
+              ? { icon: "📝", name: item.customName, color: COLORS.accent }
+              : SUBJECTS[item.subject];
             const now = new Date();
-            const [sh, sm] = item.start.split(':').map(Number);
-            const [eh, em] = (item.end || '23:59').split(':').map(Number);
+            const [sh, sm] = item.start.split(":").map(Number);
+            const [eh, em] = (item.end || "23:59").split(":").map(Number);
             const startMin = sh * 60 + sm;
             const endMin = eh * 60 + em;
             const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -124,30 +193,57 @@ export default function ScheduleScreen() {
             const isPast = nowMin >= endMin;
 
             return (
-              <View key={item.id || i} style={[styles.slot, isNow && styles.slotNow, isPast && styles.slotPast]}>
+              <View
+                key={item.id || i}
+                style={[
+                  styles.slot,
+                  isNow && styles.slotNow,
+                  isPast && styles.slotPast,
+                ]}
+              >
                 {/* Time bar */}
                 <View style={styles.timeCol}>
                   <Text style={styles.timeStart}>{item.start}</Text>
                   <View style={styles.timeLine} />
-                  <Text style={styles.timeEnd}>{item.end || '~'}</Text>
+                  <Text style={styles.timeEnd}>{item.end || "~"}</Text>
                 </View>
 
                 {/* Content */}
-                <View style={[styles.slotContent, { borderLeftColor: subj?.color || COLORS.accent }]}>
+                <View
+                  style={[
+                    styles.slotContent,
+                    { borderLeftColor: subj?.color || COLORS.accent },
+                  ]}
+                >
                   <View style={styles.slotInfo}>
-                    <Text style={styles.slotSubject}>{subj?.icon || ''} {subj?.name || ''}</Text>
+                    <Text style={styles.slotSubject}>
+                      {subj?.icon || ""} {subj?.name || ""}
+                    </Text>
                     <Text style={styles.slotMeta}>
-                      {item.start} - {item.end || '待定'}
-                      {isNow && ' · 现在'}
-                      {isPast && ' · 已过'}
+                      {item.start} - {item.end || "待定"}
+                      {isNow && " · 现在"}
+                      {isPast && " · 已过"}
                     </Text>
                   </View>
                   <View style={styles.slotActions}>
                     {isNow && <View style={styles.nowDot} />}
-                    <TouchableOpacity onPress={() => { setEditing(item); setShowEditor(true); }}>
+                    <TouchableOpacity
+                      style={styles.iconAction}
+                      onPress={() => {
+                        setEditing(item);
+                        setShowEditor(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`编辑 ${subj?.name || "计划"}`}
+                    >
                       <Text style={styles.editIcon}>✏️</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                    <TouchableOpacity
+                      style={styles.iconAction}
+                      onPress={() => handleDelete(item.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`删除 ${subj?.name || "计划"}`}
+                    >
                       <Text style={styles.delIcon}>🗑</Text>
                     </TouchableOpacity>
                   </View>
@@ -164,7 +260,10 @@ export default function ScheduleScreen() {
         visible={showEditor}
         initial={editing}
         onSave={handleSaveItem}
-        onClose={() => { setShowEditor(false); setEditing(null); }}
+        onClose={() => {
+          setShowEditor(false);
+          setEditing(null);
+        }}
       />
     </View>
   );
@@ -175,19 +274,47 @@ const ITEM_H = 44;
 const COPIES = 3;
 
 function TimeWheel({ value, onChange }) {
-  const [h, m] = (value || '08:00').split(':').map(Number);
+  const [h, m] = (value || "08:00").split(":").map(Number);
   const baseH = Array.from({ length: 24 }, (_, i) => i);
   const baseM = Array.from({ length: 12 }, (_, i) => i * 5);
   const hData = Array.from({ length: COPIES }, () => baseH).flat();
   const mData = Array.from({ length: COPIES }, () => baseM).flat();
-  const hIdx = Math.floor(COPIES/2) * 24 + h;
-  const mIdx = Math.floor(COPIES/2) * 12 + m / 5;
+  const hIdx = Math.floor(COPIES / 2) * 24 + h;
+  const mIdx = Math.floor(COPIES / 2) * 12 + m / 5;
 
   const renderWheel = (ref, data, idx, curVal, onSnap) => (
-    <View style={{ width: 64, height: ITEM_H * 3, overflow: 'hidden' }}>
-      <View style={{ position: 'absolute', top: ITEM_H, left: 0, right: 0, height: ITEM_H, backgroundColor: COLORS.accent+'20', borderRadius: 8 }} />
-      <View style={{ position: 'absolute', top: ITEM_H, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent+'50' }} />
-      <View style={{ position: 'absolute', top: ITEM_H*2, left: 6, right: 6, height: 1, backgroundColor: COLORS.accent+'50' }} />
+    <View style={{ width: 64, height: ITEM_H * 3, overflow: "hidden" }}>
+      <View
+        style={{
+          position: "absolute",
+          top: ITEM_H,
+          left: 0,
+          right: 0,
+          height: ITEM_H,
+          backgroundColor: COLORS.accent + "20",
+          borderRadius: 8,
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: ITEM_H,
+          left: 6,
+          right: 6,
+          height: 1,
+          backgroundColor: COLORS.accent + "50",
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: ITEM_H * 2,
+          left: 6,
+          right: 6,
+          height: 1,
+          backgroundColor: COLORS.accent + "50",
+        }}
+      />
       <ScrollView
         ref={ref}
         showsVerticalScrollIndicator={false}
@@ -199,9 +326,22 @@ function TimeWheel({ value, onChange }) {
         contentContainerStyle={{ paddingVertical: ITEM_H }}
       >
         {data.map((v, i) => (
-          <View key={i} style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ fontSize: v === curVal ? 20 : 15, fontWeight: v === curVal ? '700' : '400', color: v === curVal ? '#fff' : COLORS.text2 }}>
-              {String(v).padStart(2, '0')}
+          <View
+            key={i}
+            style={{
+              height: ITEM_H,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: v === curVal ? 20 : 15,
+                fontWeight: v === curVal ? "700" : "400",
+                color: v === curVal ? "#fff" : COLORS.text2,
+              }}
+            >
+              {String(v).padStart(2, "0")}
             </Text>
           </View>
         ))}
@@ -211,18 +351,31 @@ function TimeWheel({ value, onChange }) {
 
   const onHSnap = (e) => {
     const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(baseH[i % 24]).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+    onChange(
+      `${String(baseH[i % 24]).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+    );
   };
   const onMSnap = (e) => {
     const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(`${String(h).padStart(2,'0')}:${String((i % 12) * 5).padStart(2,'0')}`);
+    onChange(
+      `${String(h).padStart(2, "0")}:${String((i % 12) * 5).padStart(2, "0")}`,
+    );
   };
 
   return (
-    <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+    <View
+      style={{
+        flexDirection: "row",
+        gap: 8,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
       {renderWheel(useRef(), hData, hIdx, h, onHSnap)}
-      <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: '700' }}>:</Text>
+      <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: "700" }}>
+        :
+      </Text>
       {renderWheel(useRef(), mData, mIdx, m, onMSnap)}
       <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
     </View>
@@ -230,17 +383,31 @@ function TimeWheel({ value, onChange }) {
 }
 
 function PlanEditor({ visible, initial, onSave, onClose }) {
-  const [subject, setSubject] = useState(initial?.subject || 'english');
-  const [start, setStart] = useState(initial?.start || '08:00');
-  const [end, setEnd] = useState(initial?.end || '10:00');
-  const [customName, setCustomName] = useState(initial?.customName || '');
+  const [subject, setSubject] = useState(initial?.subject || "english");
+  const [start, setStart] = useState(initial?.start || "08:00");
+  const [end, setEnd] = useState(initial?.end || "10:00");
+  const [customName, setCustomName] = useState(initial?.customName || "");
 
   useEffect(() => {
-    if (initial) { setSubject(initial.subject || 'custom'); setStart(initial.start); setEnd(initial.end || '10:00'); setCustomName(initial.customName || ''); }
-    else {
-      AsyncStorage.getItem('last_schedule').then(d => {
-        if (d) { const v = JSON.parse(d); setStart(v.start); setEnd(v.end); setSubject(v.subject || 'english'); setCustomName(v.customName || ''); }
-        else { setStart('08:00'); setEnd('10:00'); setSubject('english'); setCustomName(''); }
+    if (initial) {
+      setSubject(initial.subject || "custom");
+      setStart(initial.start);
+      setEnd(initial.end || "10:00");
+      setCustomName(initial.customName || "");
+    } else {
+      AsyncStorage.getItem("last_schedule").then((d) => {
+        if (d) {
+          const v = JSON.parse(d);
+          setStart(v.start);
+          setEnd(v.end);
+          setSubject(v.subject || "english");
+          setCustomName(v.customName || "");
+        } else {
+          setStart("08:00");
+          setEnd("10:00");
+          setSubject("english");
+          setCustomName("");
+        }
       });
     }
   }, [initial, visible]);
@@ -248,22 +415,51 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.editorOverlay}>
         {/* Only top area closes on tap */}
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={styles.editorSheet}>
           <View style={styles.editorHandle} />
-          <Text style={styles.editorTitle}>{initial ? '编辑安排' : '添加安排'}</Text>
+          <Text style={styles.editorTitle}>
+            {initial ? "编辑安排" : "添加安排"}
+          </Text>
 
           <Text style={styles.fieldLabel}>科目</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 4 }}
+          >
+            <View style={{ flexDirection: "row", gap: 8 }}>
               {Object.entries(SUBJECTS).map(([key, subj]) => (
-                <TouchableOpacity key={key}
-                  style={[styles.pickChip, subject === key && !customName && { backgroundColor: subj.color + '33', borderColor: subj.color }]}
-                  onPress={() => { setSubject(key); setCustomName(''); }}>
-                  <Text style={[styles.pickChipText, subject === key && !customName && { color: '#fff', fontWeight: '700' }]}>
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.pickChip,
+                    subject === key &&
+                      !customName && {
+                        backgroundColor: subj.color + "33",
+                        borderColor: subj.color,
+                      },
+                  ]}
+                  onPress={() => {
+                    setSubject(key);
+                    setCustomName("");
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.pickChipText,
+                      subject === key &&
+                        !customName && { color: "#fff", fontWeight: "700" },
+                    ]}
+                  >
                     {subj.icon} {subj.name}
                   </Text>
                 </TouchableOpacity>
@@ -275,7 +471,10 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
             placeholder="或输入自定义项目名（如：复习线代、背单词...）"
             placeholderTextColor={COLORS.text2}
             value={customName}
-            onChangeText={t => { setCustomName(t); if (t) setSubject('custom'); }}
+            onChangeText={(t) => {
+              setCustomName(t);
+              if (t) setSubject("custom");
+            }}
           />
 
           <Text style={styles.fieldLabel}>开始时间</Text>
@@ -285,20 +484,33 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
           <TimeWheel value={end} onChange={setEnd} />
 
           <View style={styles.editorActions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => {
-              AsyncStorage.setItem('last_schedule', JSON.stringify({ start, end, subject, customName }));
-              onClose();
-            }}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                AsyncStorage.setItem(
+                  "last_schedule",
+                  JSON.stringify({ start, end, subject, customName }),
+                );
+                onClose();
+              }}
+            >
               <Text style={styles.cancelTxt}>取消</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveBtn} onPress={() => {
-              AsyncStorage.setItem('last_schedule', JSON.stringify({ start, end, subject, customName }));
-              onSave({
-                subject: customName ? 'custom' : subject,
-                customName: customName || undefined,
-                start, end,
-              });
-            }}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={() => {
+                AsyncStorage.setItem(
+                  "last_schedule",
+                  JSON.stringify({ start, end, subject, customName }),
+                );
+                onSave({
+                  subject: customName ? "custom" : subject,
+                  customName: customName || undefined,
+                  start,
+                  end,
+                });
+              }}
+            >
               <Text style={styles.saveTxt}>保存</Text>
             </TouchableOpacity>
           </View>
@@ -310,73 +522,243 @@ function PlanEditor({ visible, initial, onSave, onClose }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 56, paddingBottom: 12 },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.text },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 44 : 56,
+    paddingBottom: 12,
+  },
+  title: { fontSize: 24, fontWeight: "800", color: COLORS.text },
   subtitle: { fontSize: 12, color: COLORS.text2, marginTop: 4 },
-  addBtn: { backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addBtn: {
+    minHeight: 44,
+    justifyContent: "center",
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  addBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   scroll: { flex: 1, paddingHorizontal: 20 },
-  overview: { backgroundColor: COLORS.card, borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
-  overviewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  overviewLabel: { color: COLORS.text2, fontSize: 11, fontWeight: '700' },
-  overviewTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', marginTop: 4 },
-  overviewBadge: { color: '#fff', backgroundColor: COLORS.accent, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, overflow: 'hidden', fontSize: 12, fontWeight: '800' },
-  overviewMetrics: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  overviewMetric: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 12, padding: 10 },
-  metricStrong: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
-  metricText: { color: COLORS.text2, fontSize: 10, fontWeight: '700', marginTop: 4 },
-  hint: { backgroundColor: 'rgba(255,107,107,0.1)', borderRadius: 8, padding: 8, marginBottom: 10 },
-  hintText: { fontSize: 12, color: COLORS.text2, textAlign: 'center', lineHeight: 18 },
-  empty: { alignItems: 'center', paddingVertical: 60 },
+  overview: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  overviewTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  overviewLabel: { color: COLORS.text2, fontSize: 11, fontWeight: "700" },
+  overviewTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  overviewBadge: {
+    color: "#fff",
+    backgroundColor: COLORS.accent,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    overflow: "hidden",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  overviewMetrics: { flexDirection: "row", gap: 8, marginTop: 12 },
+  overviewMetric: {
+    flex: 1,
+    backgroundColor: COLORS.card2,
+    borderRadius: 12,
+    padding: 10,
+  },
+  metricStrong: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
+  metricText: {
+    color: COLORS.text2,
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  hint: {
+    backgroundColor: "rgba(255,107,107,0.1)",
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 10,
+  },
+  hintText: {
+    fontSize: 12,
+    color: COLORS.text2,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  empty: { alignItems: "center", paddingVertical: 60 },
   emptyIcon: { fontSize: 32, marginBottom: 8 },
-  emptyTitle: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 4 },
-  emptySub: { fontSize: 11, color: COLORS.text2, textAlign: 'center', lineHeight: 16 },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  emptySub: {
+    fontSize: 11,
+    color: COLORS.text2,
+    textAlign: "center",
+    lineHeight: 16,
+  },
   // Time slots
-  slot: { flexDirection: 'row', marginBottom: 6 },
+  slot: { flexDirection: "row", marginBottom: 6 },
   slotNow: { opacity: 1 },
   slotPast: { opacity: 0.45 },
-  timeCol: { width: 40, alignItems: 'center', paddingTop: 6 },
-  timeStart: { fontSize: 10, fontWeight: '700', color: COLORS.text },
-  timeLine: { flex: 1, width: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 2, minHeight: 12 },
+  timeCol: { width: 40, alignItems: "center", paddingTop: 6 },
+  timeStart: { fontSize: 10, fontWeight: "700", color: COLORS.text },
+  timeLine: {
+    flex: 1,
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginVertical: 2,
+    minHeight: 12,
+  },
   timeEnd: { fontSize: 9, color: COLORS.text2 },
   slotContent: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.card, borderRadius: 14, padding: 12,
-    borderLeftWidth: 3, marginLeft: 6, borderWidth: 1, borderColor: COLORS.border,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    padding: 12,
+    borderLeftWidth: 3,
+    marginLeft: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   slotInfo: { flex: 1 },
-  slotSubject: { fontSize: 12, fontWeight: '600', color: COLORS.text },
+  slotSubject: { fontSize: 12, fontWeight: "600", color: COLORS.text },
   slotMeta: { fontSize: 10, color: COLORS.text2, marginTop: 1 },
-  slotActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  nowDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.accent },
+  slotActions: { flexDirection: "row", alignItems: "center" },
+  iconAction: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -8,
+  },
+  nowDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.accent,
+  },
   editIcon: { fontSize: 14, opacity: 0.5 },
   delIcon: { fontSize: 14, opacity: 0.5 },
   // Editor
-  editorOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  editorSheet: { backgroundColor: COLORS.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '85%' },
-  editorHandle: { width: 36, height: 4, backgroundColor: COLORS.card2, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  editorTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 16 },
-  customInput: { backgroundColor: COLORS.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: COLORS.text, borderWidth: 1, borderColor: COLORS.card2, marginTop: 8, marginBottom: 8 },
-  pickBtn: { backgroundColor: COLORS.accent, borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginBottom: 12 },
-  pickBtnT: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text2, marginBottom: 6, marginTop: 4 },
-  pickChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: COLORS.card2, borderWidth: 1.5, borderColor: 'transparent' },
+  editorOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "flex-end",
+  },
+  editorSheet: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 40,
+    maxHeight: "85%",
+  },
+  editorHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: COLORS.card2,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  editorTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  customInput: {
+    backgroundColor: COLORS.bg,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.card2,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  pickBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  pickBtnT: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text2,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  pickChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: COLORS.card2,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
   pickChipText: { fontSize: 13, color: COLORS.text2 },
-  timePick: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: COLORS.card2, marginBottom: 4 },
+  timePick: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: COLORS.card2,
+    marginBottom: 4,
+  },
   timePickActive: { backgroundColor: COLORS.accent },
   timePickText: { fontSize: 11, color: COLORS.text2 },
-  timePickTActive: { color: '#fff', fontWeight: '700' },
-  editorActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn: { flex: 1, backgroundColor: COLORS.card2, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  cancelTxt: { color: COLORS.text2, fontSize: 15, fontWeight: '600' },
-  saveBtn: { flex: 2, backgroundColor: COLORS.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  saveTxt: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  timePickTActive: { color: "#fff", fontWeight: "700" },
+  editorActions: { flexDirection: "row", gap: 12, marginTop: 20 },
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: COLORS.card2,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelTxt: { color: COLORS.text2, fontSize: 15, fontWeight: "600" },
+  saveBtn: {
+    flex: 2,
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  saveTxt: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });
 
 // Time wheel mini-styles
 const stl = StyleSheet.create({
-  tw: { height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 10, marginVertical: 1 },
-  twOn: { backgroundColor: COLORS.accent + '40' },
+  tw: {
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 10,
+    marginVertical: 1,
+  },
+  twOn: { backgroundColor: COLORS.accent + "40" },
   twT: { fontSize: 16, color: COLORS.text2 },
-  twTOn: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  twTOn: { color: "#fff", fontWeight: "700", fontSize: 18 },
 });

@@ -15,6 +15,7 @@ class StudyAccessibilityService : AccessibilityService() {
     companion object {
         var instance: StudyAccessibilityService? = null
         var lockActive = false
+        var lockLevel = "strong"
         val whitelist = mutableSetOf<String>()
     }
 
@@ -31,11 +32,12 @@ class StudyAccessibilityService : AccessibilityService() {
         // 国产 ROM 杀掉进程后系统会重启无障碍服务：从持久化标志恢复锁定状态，
         // 而不是清零，否则"锁一下就没了"。
         lockActive = prefs.getBoolean("lock_active", false)
+        lockLevel = prefs.getString("lock_level", "strong") ?: "strong"
         val saved = prefs.getString("whitelist", "") ?: ""
         whitelist.clear()
         if (saved.isNotEmpty()) whitelist.addAll(saved.split(","))
         // 恢复后若仍处于锁定，重新拉起前台保活服务
-        if (lockActive) {
+        if (lockActive && lockLevel != "light") {
             try { LockForegroundService.start(this) } catch (_: Exception) {}
         }
         serviceInfo = AccessibilityServiceInfo().apply {
@@ -65,6 +67,17 @@ class StudyAccessibilityService : AccessibilityService() {
             lastAllowedTime = System.currentTimeMillis()
             pendingLock?.let { lockHandler.removeCallbacks(it) }
             pendingLock = null
+            return
+        }
+
+        if (lockLevel == "light") {
+            pendingLock?.let { lockHandler.removeCallbacks(it) }
+            pendingLock = null
+            val now = System.currentTimeMillis()
+            if (now - lastToastTime > 10_000) {
+                Toast.makeText(this, "当前是学习时间，返回研途继续专注", Toast.LENGTH_SHORT).show()
+                lastToastTime = now
+            }
             return
         }
 

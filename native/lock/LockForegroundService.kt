@@ -33,9 +33,12 @@ class LockForegroundService : Service() {
             packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }, PendingIntent.FLAG_IMMUTABLE)
+        val level = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            .getString("lock_level", "strong") ?: "strong"
+        val modeText = if (level == "medium") "中度拦截运行中" else "强力锁运行中"
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("研途专注")
-            .setContentText("专注模式运行中 · 非白名单应用将自动返回桌面")
+            .setContentText("$modeText · 白名单外应用将自动返回桌面")
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
