@@ -1,33 +1,16 @@
 import React from "react";
-import { Image, View } from "react-native";
-import { COLORS } from "../constants";
-import { Icon } from "./UI";
-
-const illustrations = {
-  english: require("../../assets/subjects/english.png"),
-  math: require("../../assets/subjects/math.png"),
-  politics: require("../../assets/subjects/politics.png"),
-  automation: require("../../assets/subjects/professional.png"),
-};
+import { Text, View } from "react-native";
+import { COLORS, SUBJECTS } from "../constants";
 
 export default function SubjectIcon({ subject, size = 32 }) {
-  const source = illustrations[subject];
-  if (source) {
-    return (
-      <Image
-        source={source}
-        resizeMode="contain"
-        resizeMethod="resize"
-        accessible={false}
-        fadeDuration={0}
-        testID={`subject-illustration-${subject}`}
-        style={{ width: size, height: size, flexShrink: 0 }}
-      />
-    );
-  }
+  const value = SUBJECTS[subject];
   return (
     <View
       accessible={false}
+      aria-hidden
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID={`subject-symbol-${subject}`}
       style={{
         width: size,
         height: size,
@@ -36,7 +19,22 @@ export default function SubjectIcon({ subject, size = 32 }) {
         justifyContent: "center",
       }}
     >
-      <Icon name="book-open" size={size * 0.6} color={COLORS.text2} />
+      <Text
+        accessible={false}
+        allowFontScaling={false}
+        numberOfLines={1}
+        style={{
+          color: value?.color || COLORS.text2,
+          fontSize: size * 0.62,
+          fontWeight: "500",
+          lineHeight: size,
+          letterSpacing: 0,
+          textAlign: "center",
+          includeFontPadding: false,
+        }}
+      >
+        {value?.symbol || "学"}
+      </Text>
     </View>
   );
 }

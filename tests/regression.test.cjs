@@ -94,15 +94,13 @@ const initialTimer = {
   countUp: false,
 };
 
-test("all four subject illustrations are local PNG assets with transparency", () => {
-  for (const name of ["english", "math", "politics", "professional"]) {
-    const image = fs.readFileSync(path.join(__dirname, "..", "assets", "subjects", `${name}.png`));
-    assert.deepEqual(image.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    assert.equal(image.subarray(12, 16).toString(), "IHDR");
-    assert.ok(image.readUInt32BE(16) >= 128);
-    assert.ok(image.readUInt32BE(20) >= 128);
-    assert.ok([4, 6].includes(image[25]), `${name} must retain an alpha channel`);
-  }
+test("subject symbols are distinct and retain the existing subject keys", () => {
+  const { SUBJECTS } = environment().load("src/constants.js");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(SUBJECTS).map(([key, value]) => [key, value.symbol])),
+    { english: "英", math: "数", politics: "政", automation: "专" },
+  );
+  assert.equal(new Set(Object.values(SUBJECTS).map((value) => value.symbol)).size, 4);
 });
 
 test("academic goal saves normalized school and optional major across reloads", async () => {

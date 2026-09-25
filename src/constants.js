@@ -1,8 +1,8 @@
 export const SUBJECTS = {
-  english: { name: "英语", icon: "", glyph: "languages", color: "#347D9F" },
-  math: { name: "数学", icon: "", glyph: "radical", color: "#B87939" },
-  politics: { name: "政治", icon: "", glyph: "notebook-pen", color: "#3E846E" },
-  automation: { name: "专业课", icon: "", glyph: "graduation-cap", color: "#8870A3" },
+  english: { name: "英语", icon: "", symbol: "英", glyph: "languages", color: "#347D9F" },
+  math: { name: "数学", icon: "", symbol: "数", glyph: "radical", color: "#B87939" },
+  politics: { name: "政治", icon: "", symbol: "政", glyph: "notebook-pen", color: "#3E846E" },
+  automation: { name: "专业课", icon: "", symbol: "专", glyph: "graduation-cap", color: "#8870A3" },
 };
 
 export const TIMER_MODES = {

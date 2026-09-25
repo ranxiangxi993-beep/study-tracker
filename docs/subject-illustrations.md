@@ -1,4 +1,6 @@
-# 学科插画资源
+# 学科插画资源（已停用）
+
+用户最终改选“英、数、政、专”中文字符标识。以下插画仅保留为历史设计素材，`SubjectIcon` 不再引用，当前界面不使用这些图片。
 
 日期：2026-09-25。
 
@@ -41,4 +43,3 @@ Use case: precise-object-edit. Edit this illustrated app icon into the POLITICS 
 ```text
 Use case: precise-object-edit. Edit this illustrated app icon into the SPECIALIST STUDIES subject icon for the same coordinated set. Replace the closed dictionary entirely with ONE OPEN sage-teal hardcover textbook, shown from a gentle elevated three-quarter frontal view. Two broad ivory-white pages make a distinctive open-book silhouette, with a muted golden-apricot ribbon bookmark descending at the center gutter, a visible muted teal cover underneath. On the pages only two or three very broad understated grey-teal line impressions; no readable text, equations, seals, other symbols or extra objects. Preserve the reference's refined soft-color matte-paper sculpted mini-illustration style, soft two-tone shading, crisp clean silhouette, gently rounded solid forms and quiet study-app aesthetic. The open book should feel substantial and compact, not flat or spread too wide: same optical size and weight as the reference dictionary, readable at 36 to 44 pixels. Genuine transparent background with alpha, square canvas, centered complete object occupying 82 percent canvas width and 78 percent height, all edges visible. No colored tile, no circle, no pedestal, no backdrop, no ground shadow, no black outlines, no shiny plastic, no watermark.
 ```
-
