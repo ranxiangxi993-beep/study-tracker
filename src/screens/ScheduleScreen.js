@@ -16,6 +16,7 @@ import { useBg } from "../../App";
 import { SUBJECTS, COLORS } from "../constants";
 import { syncPlanNotifications } from "../notify";
 import DefaultBackdrop from "../components/DefaultBackdrop";
+import SubjectIcon from "../components/SubjectIcon";
 import {
   PageHeader,
   IconButton,
@@ -214,7 +215,7 @@ export default function ScheduleScreen() {
                 </View>
                 <View style={[s.item, isNow && { borderColor: COLORS.accent }]}>
                   <View style={s.itemTop}>
-                    <Icon name={subj.glyph} color={subj.color} size={18} />
+                    <SubjectIcon subject={item.subject} />
                     <Text style={s.itemSubject}>
                       {item.customName || subj.name}
                     </Text>
@@ -271,10 +272,12 @@ export default function ScheduleScreen() {
               key={key}
               onPress={() => setSubject(key)}
               accessibilityRole="radio"
+              accessibilityLabel={subj.name}
+              aria-checked={subject === key}
               accessibilityState={{ checked: subject === key }}
               style={[s.chip, subject === key && { borderColor: subj.color }]}
             >
-              <Icon name={subj.glyph} size={17} color={subj.color} />
+              <SubjectIcon subject={key} size={28} />
               <Text style={s.chipText}>{subj.name}</Text>
             </Pressable>
           ))}

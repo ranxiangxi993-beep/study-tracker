@@ -43,6 +43,7 @@ import {
 } from "../components/UI";
 import DefaultBackdrop from "../components/DefaultBackdrop";
 import PieChart from "../components/PieChart";
+import SubjectIcon from "../components/SubjectIcon";
 
 const heat = ["#EEF0EF", "#D7E7DF", "#91B9A5", "#EBB473", "#DE8D62"];
 const periods = [
@@ -398,22 +399,7 @@ export default function StatsScreen() {
           ) : (
             history.map((session) => (
               <View key={session.id} style={s.record}>
-                <View
-                  style={[
-                    s.recordIcon,
-                    {
-                      backgroundColor:
-                        (SUBJECTS[session.subject]?.color || COLORS.accent) +
-                        "18",
-                    },
-                  ]}
-                >
-                  <Icon
-                    name={SUBJECTS[session.subject]?.glyph || "book-open"}
-                    color={SUBJECTS[session.subject]?.color}
-                    size={18}
-                  />
-                </View>
+                <SubjectIcon subject={session.subject} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.recordTitle}>
                     {SUBJECTS[session.subject]?.name || "学习"}
@@ -544,13 +530,15 @@ export default function StatsScreen() {
                   key={key}
                   onPress={() => setSubject(key)}
                   accessibilityRole="radio"
+                  accessibilityLabel={value.name}
+                  aria-checked={key === subject}
                   accessibilityState={{ checked: key === subject }}
                   style={[
                     s.subject,
                     key === subject && { borderColor: value.color },
                   ]}
                 >
-                  <Icon name={value.glyph} size={18} color={value.color} />
+                  <SubjectIcon subject={key} size={28} />
                   <Text style={s.subjectText}>{value.name}</Text>
                 </Pressable>
               ))}
@@ -769,13 +757,6 @@ const s = StyleSheet.create({
     gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-  },
-  recordIcon: {
-    width: 32,
-    height: 36,
-    borderRadius: 6,
-    justifyContent: "center",
-    alignItems: "center",
   },
   recordTitle: { color: COLORS.text, fontSize: 13 },
   recordDate: { color: COLORS.text2, fontSize: 10, marginTop: 6 },

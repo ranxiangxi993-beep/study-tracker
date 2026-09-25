@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,14 @@ import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COLORS } from "../constants";
 import { dateKey } from "../statsModel";
+import {
+  EMPTY_ACADEMIC_GOAL,
+  GOAL_LIMITS,
+  academicGoalError,
+  loadAcademicGoal,
+  saveAcademicGoal,
+  clearAcademicGoal,
+} from "../academicGoal";
 import { useBg } from "../../App";
 import DefaultBackdrop from "../components/DefaultBackdrop";
 import {
@@ -37,9 +45,24 @@ export default function CountdownScreen({ navigation }) {
   const [now, setNow] = useState(new Date());
   const [editing, setEditing] = useState(null);
   const [input, setInput] = useState("");
+  const [academicGoal, setAcademicGoal] = useState(EMPTY_ACADEMIC_GOAL);
+  const [goalDraft, setGoalDraft] = useState(EMPTY_ACADEMIC_GOAL);
+  const [goalEditor, setGoalEditor] = useState(false);
+  const [goalError, setGoalError] = useState("");
+  const [goalLoading, setGoalLoading] = useState(true);
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const savingRef = useRef(false);
+  const majorRef = useRef(null);
   useEffect(() => {
-    AsyncStorage.multiGet(["exam_target_date", "kaoyan_study_start"]).then(
-      (entries) => {
+    let mounted = true;
+    Promise.all([
+      AsyncStorage.multiGet(["exam_target_date", "kaoyan_study_start"]),
+      loadAcademicGoal(),
+    ])
+      .then(([entries, goal]) => {
+        if (!mounted) return;
+        setAcademicGoal(goal);
         const saved = Object.fromEntries(entries);
         if (saved.exam_target_date && parseDate(saved.exam_target_date))
           setTarget(saved.exam_target_date);
@@ -47,11 +70,48 @@ export default function CountdownScreen({ navigation }) {
           const date = new Date(saved.kaoyan_study_start);
           if (Number.isFinite(date.getTime())) setStart(dateKey(date));
         }
-      },
-    );
+      })
+      .catch(() => {
+        if (mounted) Alert.alert("读取备考目标失败", "请返回后重试。");
+      })
+      .finally(() => {
+        if (mounted) setGoalLoading(false);
+      });
     const interval = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
+  const editGoal = () => {
+    setGoalDraft({ ...academicGoal });
+    setGoalError("");
+    setConfirmClear(false);
+    setGoalEditor(true);
+  };
+  const closeGoal = () => {
+    if (!savingRef.current) setGoalEditor(false);
+  };
+  const updateGoal = async (clear = false) => {
+    if (savingRef.current) return;
+    const error = clear ? "" : academicGoalError(goalDraft);
+    if (error) return setGoalError(error);
+    savingRef.current = true;
+    setGoalSaving(true);
+    setGoalError("");
+    try {
+      const saved = clear
+        ? await clearAcademicGoal()
+        : await saveAcademicGoal(goalDraft);
+      setAcademicGoal(saved);
+      setGoalEditor(false);
+    } catch {
+      setGoalError("未能保存，请重试。原来的目标不会被替换。");
+    } finally {
+      savingRef.current = false;
+      setGoalSaving(false);
+    }
+  };
   const targetDate = parseDate(target);
   const today = parseDate(dateKey(now));
   const days = Math.max(0, Math.round((targetDate - today) / 86400000));
@@ -113,8 +173,31 @@ export default function CountdownScreen({ navigation }) {
         />
       </PageHeader>
       <ScrollView contentContainerStyle={s.body}>
+        <Pressable
+          style={s.school}
+          onPress={editGoal}
+          disabled={goalLoading}
+          accessibilityRole="button"
+          accessibilityLabel="编辑目标院校和专业"
+          accessibilityState={{ disabled: goalLoading }}
+        >
+          <View style={s.schoolIcon}>
+            <Icon name="graduation-cap" size={26} color={COLORS.accent} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={s.schoolLabel}>目标院校</Text>
+            <Text style={s.schoolName}>
+              {goalLoading
+                ? "正在读取"
+                : academicGoal.university || "设置我的目标院校"}
+            </Text>
+            {!!academicGoal.major && (
+              <Text style={s.major}>{academicGoal.major}</Text>
+            )}
+          </View>
+          <Icon name="edit" size={18} />
+        </Pressable>
         <View style={s.hero}>
-          <Icon name="target" size={32} color={COLORS.accent} />
           <Text style={s.caption}>{days ? "距离目标日" : "已到目标日"}</Text>
           <Text style={s.days}>{days}</Text>
           <Text style={s.daysUnit}>天</Text>
@@ -147,6 +230,82 @@ export default function CountdownScreen({ navigation }) {
           onPress={() => navigation.goBack()}
         />
       </ScrollView>
+      <Sheet visible={goalEditor} onClose={closeGoal} title="我的升学目标">
+        <Text style={s.fieldLabel}>目标院校</Text>
+        <TextInput
+          style={ui.input}
+          value={goalDraft.university}
+          onChangeText={(university) => {
+            setGoalDraft((value) => ({ ...value, university }));
+            setGoalError("");
+          }}
+          accessibilityLabel="目标院校"
+          placeholder="填写院校名称"
+          placeholderTextColor={COLORS.text2}
+          maxLength={GOAL_LIMITS.university}
+          editable={!goalSaving}
+          returnKeyType="next"
+          onSubmitEditing={() => majorRef.current?.focus()}
+        />
+        <Text style={s.fieldLabel}>目标专业（选填）</Text>
+        <TextInput
+          ref={majorRef}
+          style={ui.input}
+          value={goalDraft.major}
+          onChangeText={(major) => {
+            setGoalDraft((value) => ({ ...value, major }));
+            setGoalError("");
+          }}
+          accessibilityLabel="目标专业"
+          placeholder="填写专业名称或代码"
+          placeholderTextColor={COLORS.text2}
+          maxLength={GOAL_LIMITS.major}
+          editable={!goalSaving}
+          returnKeyType="done"
+          onSubmitEditing={() => updateGoal()}
+        />
+        {!!goalError && (
+          <Text style={s.error} accessibilityRole="alert">{goalError}</Text>
+        )}
+        <ActionButton
+          title={goalSaving ? "正在保存" : "保存目标"}
+          icon="check"
+          disabled={goalSaving}
+          onPress={() => updateGoal()}
+          style={{ marginTop: 24 }}
+        />
+        {!!academicGoal.university &&
+          (confirmClear ? (
+            <View style={s.clearConfirmation}>
+              <Text style={ui.muted}>清除院校和专业目标？</Text>
+              <View style={s.clearActions}>
+                <ActionButton
+                  secondary
+                  title="保留"
+                  disabled={goalSaving}
+                  onPress={() => setConfirmClear(false)}
+                  style={{ flex: 1 }}
+                />
+                <ActionButton
+                  title="确认清除"
+                  disabled={goalSaving}
+                  onPress={() => updateGoal(true)}
+                  style={{ flex: 1, backgroundColor: COLORS.lock }}
+                />
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              style={s.clearGoal}
+              onPress={() => setConfirmClear(true)}
+              disabled={goalSaving}
+              accessibilityRole="button"
+            >
+              <Icon name="delete" size={16} />
+              <Text style={ui.muted}>清除院校目标</Text>
+            </Pressable>
+          ))}
+      </Sheet>
       <Sheet
         visible={!!editing}
         onClose={() => setEditing(null)}
@@ -173,8 +332,39 @@ const s = StyleSheet.create({
     maxWidth: 640,
     alignSelf: "center",
   },
-  hero: { alignItems: "center", paddingVertical: 40 },
-  caption: { color: COLORS.text2, fontSize: 14, marginTop: 24 },
+  school: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  schoolIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    backgroundColor: COLORS.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  schoolLabel: { color: COLORS.text2, fontSize: 12, marginBottom: 6 },
+  schoolName: { color: COLORS.text, fontSize: 20, lineHeight: 28, fontWeight: "600" },
+  major: { color: COLORS.text2, fontSize: 13, lineHeight: 20, marginTop: 5 },
+  fieldLabel: { color: COLORS.text, fontSize: 14, marginTop: 18, marginBottom: 10 },
+  error: { color: COLORS.lock, fontSize: 13, lineHeight: 20, marginTop: 12 },
+  clearGoal: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 52,
+  },
+  clearConfirmation: { marginTop: 20, gap: 12 },
+  clearActions: { flexDirection: "row", gap: 12 },
+  hero: { alignItems: "center", paddingVertical: 32 },
+  caption: { color: COLORS.text2, fontSize: 14 },
   days: {
     color: COLORS.text,
     fontSize: 104,

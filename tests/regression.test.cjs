@@ -94,6 +94,45 @@ const initialTimer = {
   countUp: false,
 };
 
+test("academic goal saves normalized school and optional major across reloads", async () => {
+  const env = environment({ exam_target_date: "2026-12-20", daily_goal_minutes: "120" });
+  const goals = env.load("src/academicGoal.js");
+  const value = await goals.saveAcademicGoal({ university: "  示例大学  ", major: "  0854   电子信息  " });
+  assert.deepEqual(value, { university: "示例大学", major: "0854 电子信息" });
+  const restarted = environment(Object.fromEntries(env.data)).load("src/academicGoal.js");
+  assert.deepEqual(await restarted.loadAcademicGoal(), value);
+  assert.equal(env.data.get("exam_target_date"), "2026-12-20");
+  assert.equal(env.data.get("daily_goal_minutes"), "120");
+  assert.deepEqual(await goals.saveAcademicGoal({ university: "另一所大学" }), { university: "另一所大学", major: "" });
+});
+
+test("invalid academic goal never replaces a previously saved target", async () => {
+  const env = environment();
+  const goals = env.load("src/academicGoal.js");
+  const original = await goals.saveAcademicGoal({ university: "示例大学", major: "计算机科学" });
+  for (const invalid of [null, {}, { university: "  " }, { university: "校".repeat(61) }, { university: "大学", major: "科".repeat(81) }]) {
+    await assert.rejects(goals.saveAcademicGoal(invalid));
+    assert.deepEqual(await goals.loadAcademicGoal(), original);
+  }
+});
+
+test("empty or malformed academic goal is safe to load", async () => {
+  for (const raw of [null, "invalid json", "null", "[]", "42", '{"university":42}', '{"major":"专业"}']) {
+    const goals = environment({ academic_goal: raw }).load("src/academicGoal.js");
+    assert.deepEqual(await goals.loadAcademicGoal(), { university: "", major: "" });
+  }
+});
+
+test("clearing academic goal keeps exam date, study history and daily minimum", async () => {
+  const initial = { exam_target_date: "2027-12-19", study_sessions: "[]", daily_goal_minutes: "180" };
+  const env = environment(initial);
+  const goals = env.load("src/academicGoal.js");
+  await goals.saveAcademicGoal({ university: "示例大学" });
+  await goals.clearAcademicGoal();
+  assert.deepEqual(await goals.loadAcademicGoal(), { university: "", major: "" });
+  assert.deepEqual(Object.fromEntries(env.data), initial);
+});
+
 test("45-minute countdown uses an absolute deadline, not a JS tick counter", () => {
   assert.equal(timer.remainingSeconds(initialTimer, 181000), 2520);
   assert.equal(timer.remainingSeconds(initialTimer, 3601000), 0);

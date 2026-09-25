@@ -18,6 +18,8 @@ import useStudyTimer from "../useStudyTimer";
 import TimerCircle from "../components/TimerCircle";
 import DefaultBackdrop from "../components/DefaultBackdrop";
 import StudySettings from "../components/StudySettings";
+import SubjectIcon from "../components/SubjectIcon";
+import { EMPTY_ACADEMIC_GOAL, loadAcademicGoal } from "../academicGoal";
 import {
   Icon,
   IconButton,
@@ -57,11 +59,12 @@ export default function TimerScreen({ navigation }) {
   const [locked, setLocked] = useState(false);
   const [plan, setPlan] = useState([]);
   const [target, setTarget] = useState("2026-12-20");
+  const [academicGoal, setAcademicGoal] = useState(EMPTY_ACADEMIC_GOAL);
   const [date, setDate] = useState(Date.now());
 
   const refresh = useCallback(async () => {
     try {
-      const [stats, days, active, entries] = await Promise.all([
+      const [stats, days, active, entries, goal] = await Promise.all([
         getTodayStats(),
         getStreak(),
         isLockActive(),
@@ -76,6 +79,7 @@ export default function TimerScreen({ navigation }) {
           "daily_plan",
           "exam_target_date",
         ]),
+        loadAcademicGoal(),
       ]);
       const data = Object.fromEntries(entries);
       let duration = {};
@@ -102,6 +106,7 @@ export default function TimerScreen({ navigation }) {
       setLocked(active);
       setPlan(savedPlan);
       setTarget(data.exam_target_date || "2026-12-20");
+      setAcademicGoal(goal);
       setDate(Date.now());
     } catch {
       Alert.alert("读取设置失败", "请稍后重试。");
@@ -227,22 +232,34 @@ export default function TimerScreen({ navigation }) {
         contentContainerStyle={s.body}
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.examRow}>
-          <Icon name="target" size={16} color={COLORS.accent} />
-          <Text style={s.examLabel}>距离目标日</Text>
-          <Pressable
-            onPress={() => navigation.navigate("Countdown")}
-            accessibilityRole="button"
-            accessibilityLabel="设置备考目标日期"
-            style={s.examLink}
-          >
+        <Pressable
+          onPress={() => navigation.navigate("Countdown")}
+          accessibilityRole="button"
+          accessibilityLabel={
+            academicGoal.university
+              ? `编辑备考目标：${academicGoal.university}，${academicGoal.major || "未设置专业"}`
+              : "设置目标院校与备考日期"
+          }
+          style={s.examRow}
+        >
+          <Icon name="graduation-cap" size={23} color={COLORS.accent} />
+          <View style={s.schoolSummary}>
+            <Text style={s.schoolName} numberOfLines={1}>
+              {academicGoal.university || "设置目标院校"}
+            </Text>
+            <Text style={s.examLabel} numberOfLines={1}>
+              {academicGoal.major || "我的备考目标"}
+            </Text>
+          </View>
+          <View style={s.examCountdown}>
+            <Text style={s.examLabel}>距目标日</Text>
             <Text style={s.examValue}>
               {daysLeft}
               <Text style={s.examLabel}> 天</Text>
             </Text>
-            <Icon name="right" size={16} />
-          </Pressable>
-        </View>
+          </View>
+          <Icon name="right" size={16} />
+        </Pressable>
         <Segmented
           options={modes}
           value={currentMode}
@@ -255,6 +272,7 @@ export default function TimerScreen({ navigation }) {
               key={key}
               accessibilityRole="radio"
               accessibilityLabel={value.name}
+              aria-checked={currentSubject === key}
               accessibilityState={{
                 checked: currentSubject === key,
                 disabled: !!active,
@@ -264,20 +282,19 @@ export default function TimerScreen({ navigation }) {
               style={[
                 s.subject,
                 currentSubject === key && {
-                  borderColor: value.color,
-                  backgroundColor: value.color + "14",
+                  borderColor: value.color + "70",
+                  backgroundColor: COLORS.card,
                 },
               ]}
             >
-              <Icon
-                name={value.glyph}
-                color={currentSubject === key ? value.color : COLORS.text2}
-                size={17}
-              />
+              <SubjectIcon subject={key} />
               <Text
                 style={[
                   s.subjectText,
-                  currentSubject === key && { color: COLORS.text },
+                  currentSubject === key && {
+                    color: value.color,
+                    fontWeight: "600",
+                  },
                 ]}
               >
                 {value.name}
@@ -477,18 +494,14 @@ const s = StyleSheet.create({
   examRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingBottom: 16,
+    gap: 10,
+    minHeight: 52,
+    marginBottom: 12,
   },
+  schoolSummary: { flex: 1, minWidth: 0, gap: 4 },
+  schoolName: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   examLabel: { color: COLORS.text2, fontSize: 12 },
-  examLink: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 8,
-    minHeight: 32,
-  },
+  examCountdown: { alignItems: "flex-end", gap: 2, flexShrink: 0 },
   examValue: {
     color: COLORS.text,
     fontSize: 17,
@@ -498,17 +511,17 @@ const s = StyleSheet.create({
   subjectRow: { flexDirection: "row", gap: 6, marginTop: 14 },
   subject: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 70,
     borderWidth: 1,
     borderColor: "transparent",
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
+    paddingVertical: 6,
     gap: 5,
   },
   subjectText: { fontSize: 12, color: COLORS.text2 },
-  focus: { alignItems: "center", paddingTop: 6, paddingBottom: 20 },
+  focus: { alignItems: "center", paddingTop: 6, paddingBottom: 12 },
   timerType: {
     flexDirection: "row",
     alignItems: "center",
