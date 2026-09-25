@@ -287,7 +287,7 @@ export default function TimerScreen({ navigation }) {
                 },
               ]}
             >
-              <SubjectIcon subject={key} />
+              <SubjectIcon subject={key} size={40} />
               <Text
                 style={[
                   s.subjectText,
@@ -517,8 +517,8 @@ const s = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 6,
-    gap: 5,
+    paddingVertical: 4,
+    gap: 4,
   },
   subjectText: { fontSize: 12, color: COLORS.text2 },
   focus: { alignItems: "center", paddingTop: 6, paddingBottom: 12 },
