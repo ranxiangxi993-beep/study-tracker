@@ -1,764 +1,438 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  Modal,
-  Platform,
-  TextInput,
   Pressable,
+  TextInput,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Platform,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { SUBJECTS, COLORS } from "../constants";
+import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useBg } from "../../App";
+import { SUBJECTS, COLORS } from "../constants";
 import { syncPlanNotifications } from "../notify";
 import DefaultBackdrop from "../components/DefaultBackdrop";
+import {
+  PageHeader,
+  IconButton,
+  Icon,
+  ActionButton,
+  Sheet,
+  ui,
+} from "../components/UI";
 
-const STORAGE_KEY = "daily_plan";
-
+const minuteOf = (time) => {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return NaN;
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+const clockOf = (value) =>
+  `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 export default function ScheduleScreen() {
   const { bgUri } = useBg();
   const [plan, setPlan] = useState([]);
-  const [showEditor, setShowEditor] = useState(false);
-  const [editing, setEditing] = useState(null);
-  // 用 tick 每分钟（及每次进入页面）强制重渲染，让"现在/已过"高亮跟着时间走，
-  // 否则 isNow/isPast 是在 render 时算的，时间过了也不刷新（之前要重启 App 才更新）。
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) setPlan(JSON.parse(data));
-    });
-  }, []);
-
+  const [editor, setEditor] = useState(null);
+  const [subject, setSubject] = useState("english");
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("08:00");
+  const [end, setEnd] = useState("09:00");
+  const [now, setNow] = useState(new Date());
+  const [saving, setSaving] = useState(false);
+  const guard = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      setTick((t) => t + 1);
-      const id = setInterval(() => setTick((t) => t + 1), 30000);
+      AsyncStorage.getItem("daily_plan")
+        .then((value) => {
+          const saved = JSON.parse(value || "[]");
+          setPlan(Array.isArray(saved) ? saved : []);
+        })
+        .catch(() => Alert.alert("计划读取失败"));
+      setNow(new Date());
+      const id = setInterval(() => setNow(new Date()), 15000);
       return () => clearInterval(id);
     }, []),
   );
-
-  const savePlan = async (newPlan) => {
-    setPlan(newPlan);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newPlan));
-    // 计划变化后重建系统级每日提醒
-    syncPlanNotifications();
+  const openEditor = (item = {}) => {
+    setSubject(SUBJECTS[item.subject] ? item.subject : "english");
+    setName(item.customName || "");
+    setStart(item.start || "08:00");
+    setEnd(item.end || "09:00");
+    setEditor(item);
   };
-
-  const handleSaveItem = (item) => {
-    const toMinutes = (value) => {
-      const [hour, minute] = value.split(":").map(Number);
-      return hour * 60 + minute;
-    };
-    const startMin = toMinutes(item.start);
-    const endMin = toMinutes(item.end);
-    if (endMin <= startMin) {
-      Alert.alert("时间有误", "结束时间需要晚于开始时间。");
-      return;
-    }
-    const conflict = plan.find((p) => {
-      if (editing && p.id === editing.id) return false;
-      return (
-        startMin < toMinutes(p.end || "23:59") && endMin > toMinutes(p.start)
-      );
-    });
-    if (conflict) {
-      const name =
-        conflict.customName || SUBJECTS[conflict.subject]?.name || "已有计划";
-      Alert.alert(
-        "时间重叠",
-        `${item.start}-${item.end} 与「${name}」重叠，请先调整时间。`,
-      );
-      return;
-    }
-    const next = editing
-      ? plan.map((p) => (p.id === editing.id ? { ...item, id: editing.id } : p))
-      : [...plan, { ...item, id: Date.now() }];
-    savePlan(next.sort((a, b) => a.start.localeCompare(b.start)));
-    setShowEditor(false);
-    setEditing(null);
+  const savePlan = async (next) => {
+    const sorted = [...next].sort((a, b) => a.start.localeCompare(b.start));
+    await AsyncStorage.setItem("daily_plan", JSON.stringify(sorted));
+    setPlan(sorted);
+    await syncPlanNotifications();
   };
-
-  const handleDelete = (id) => {
-    Alert.alert("删除", "确定删除这个时间安排？", [
-      { text: "取消", style: "cancel" },
-      {
-        text: "删除",
-        style: "destructive",
-        onPress: () => savePlan(plan.filter((p) => p.id !== id)),
+  const save = async () => {
+    if (guard.current) return;
+    const from = minuteOf(start),
+      until = minuteOf(end);
+    if (!Number.isFinite(from) || !Number.isFinite(until) || until <= from)
+      return Alert.alert(
+        "时间有误",
+        "请输入 00:00 至 23:59 之间的时间，结束时间需晚于开始时间。",
+      );
+    const conflict = plan.find(
+      (item) =>
+        item.id !== editor?.id &&
+        from < minuteOf(item.end) &&
+        until > minuteOf(item.start),
+    );
+    if (conflict)
+      return Alert.alert(
+        "计划时间重叠",
+        `与 ${conflict.start}-${conflict.end} 的${conflict.customName || SUBJECTS[conflict.subject]?.name || "计划"}重叠。`,
+      );
+    guard.current = true;
+    setSaving(true);
+    try {
+      const item = {
+        id:
+          editor?.id ||
+          `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        subject,
+        customName: name.trim() || undefined,
+        start,
+        end,
+      };
+      await savePlan(
+        editor?.id
+          ? plan.map((existing) =>
+              existing.id === editor.id ? item : existing,
+            )
+          : [...plan, item],
+      );
+      setEditor(null);
+    } catch {
+      Alert.alert("计划未保存", "请重试。");
+    } finally {
+      guard.current = false;
+      setSaving(false);
+    }
+  };
+  const openTime = (value, change) => {
+    const date = new Date();
+    const minutes = minuteOf(value);
+    date.setHours(Math.floor(minutes / 60) || 0, minutes % 60 || 0);
+    DateTimePickerAndroid.open({
+      value: date,
+      mode: "time",
+      is24Hour: true,
+      onChange: (event, result) => {
+        if (event.type === "set" && result)
+          change(clockOf(result.getHours() * 60 + result.getMinutes()));
       },
-    ]);
+    });
   };
-
-  // Get today's schedule using this daily plan
-  const todayPlan = [...plan].sort((a, b) => a.start.localeCompare(b.start));
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const doneCount = todayPlan.filter((item) => {
-    const [eh, em] = (item.end || "23:59").split(":").map(Number);
-    return nowMin >= eh * 60 + em;
-  }).length;
-  const currentItem = todayPlan.find((item) => {
-    const [sh, sm] = item.start.split(":").map(Number);
-    const [eh, em] = (item.end || "23:59").split(":").map(Number);
-    return nowMin >= sh * 60 + sm && nowMin < eh * 60 + em;
-  });
-  const nextItem = todayPlan.find((item) => {
-    const [sh, sm] = item.start.split(":").map(Number);
-    return sh * 60 + sm > nowMin;
-  });
+  const currentMinute = now.getHours() * 60 + now.getMinutes();
+  const ordered = [...plan].sort((a, b) => a.start.localeCompare(b.start));
+  const current = ordered.find(
+    (item) =>
+      currentMinute >= minuteOf(item.start) &&
+      currentMinute < minuteOf(item.end),
+  );
+  const next = ordered.find((item) => minuteOf(item.start) > currentMinute);
+  const totalMin = plan.reduce(
+    (sum, item) => sum + Math.max(0, minuteOf(item.end) - minuteOf(item.start)),
+    0,
+  );
 
   return (
-    <View style={[styles.container, { backgroundColor: "transparent" }]}>
+    <View style={{ flex: 1 }}>
       {!bgUri && <DefaultBackdrop />}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>今日计划</Text>
-          <Text style={styles.subtitle}>固定日程 · 到点提醒</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => {
-            setEditing(null);
-            setShowEditor(true);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="添加每日计划"
-        >
-          <Text style={styles.addBtnText}>+ 添加</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.overview}>
-          <View style={styles.overviewTop}>
-            <View>
-              <Text style={styles.overviewLabel}>当前</Text>
-              <Text style={styles.overviewTitle}>
-                {currentItem
-                  ? currentItem.customName ||
-                    SUBJECTS[currentItem.subject]?.name ||
-                    "学习中"
-                  : "暂无进行中"}
-              </Text>
-            </View>
-            <Text style={styles.overviewBadge}>
-              {doneCount}/{todayPlan.length || 0}
+      <PageHeader
+        title="今日计划"
+        subtitle={`${now.getMonth() + 1}月${now.getDate()}日  ·  每日重复`}
+      >
+        <IconButton name="plus" label="添加计划" onPress={() => openEditor()} />
+      </PageHeader>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.body}
+      >
+        <View style={s.summary}>
+          <View>
+            <Text style={ui.muted}>计划投入</Text>
+            <Text style={s.total}>
+              {Number((totalMin / 60).toFixed(1))}
+              <Text style={s.unit}> h</Text>
             </Text>
           </View>
-          <View style={styles.overviewMetrics}>
-            <View style={styles.overviewMetric}>
-              <Text style={styles.metricStrong}>{todayPlan.length}</Text>
-              <Text style={styles.metricText}>计划项</Text>
-            </View>
-            <View style={styles.overviewMetric}>
-              <Text style={styles.metricStrong}>
-                {nextItem?.start || "--:--"}
-              </Text>
-              <Text style={styles.metricText}>下一项</Text>
-            </View>
-            <View style={styles.overviewMetric}>
-              <Text style={styles.metricStrong}>合并</Text>
-              <Text style={styles.metricText}>同分钟提醒</Text>
-            </View>
+          <View style={s.summaryRight}>
+            <Text style={s.count}>
+              {plan.length}
+              <Text style={s.unit}> 段</Text>
+            </Text>
+            <Text style={ui.muted}>提前 2 分钟提醒</Text>
           </View>
         </View>
-
-        {/* Today's schedule */}
-        {todayPlan.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📝</Text>
-            <Text style={styles.emptyTitle}>还没有每日计划</Text>
-            <Text style={styles.emptySub}>
-              点击右上角「+ 添加」设置你的每日学习安排
+        <View style={s.current}>
+          <Icon name={current ? "timer" : "calendar"} color={COLORS.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.currentLabel}>
+              {current ? "当前安排" : next ? "下一段" : "日程"}
             </Text>
+            <Text style={s.currentName}>
+              {current
+                ? current.customName || SUBJECTS[current.subject]?.name
+                : next
+                  ? `${next.start}  ${next.customName || SUBJECTS[next.subject]?.name}`
+                  : plan.length
+                    ? "今日计划时间已结束"
+                    : "留一段时间给自己"}
+            </Text>
+          </View>
+          {current && <Text style={s.currentEnd}>至 {current.end}</Text>}
+        </View>
+        {!ordered.length ? (
+          <View style={s.empty}>
+            <Icon name="calendar" size={36} />
+            <Text style={s.emptyTitle}>今天，从一个学习段开始</Text>
+            <ActionButton
+              title="添加计划"
+              icon="plus"
+              onPress={() => openEditor()}
+            />
           </View>
         ) : (
-          todayPlan.map((item, i) => {
-            const subj = item.customName
-              ? { icon: "📝", name: item.customName, color: COLORS.accent }
-              : SUBJECTS[item.subject];
-            const now = new Date();
-            const [sh, sm] = item.start.split(":").map(Number);
-            const [eh, em] = (item.end || "23:59").split(":").map(Number);
-            const startMin = sh * 60 + sm;
-            const endMin = eh * 60 + em;
-            const nowMin = now.getHours() * 60 + now.getMinutes();
-            const isNow = nowMin >= startMin && nowMin < endMin;
-            const isPast = nowMin >= endMin;
-
+          ordered.map((item) => {
+            const subj = SUBJECTS[item.subject] || SUBJECTS.english;
+            const isNow = item.id === current?.id;
+            const isPast = currentMinute >= minuteOf(item.end);
             return (
-              <View
-                key={item.id || i}
-                style={[
-                  styles.slot,
-                  isNow && styles.slotNow,
-                  isPast && styles.slotPast,
-                ]}
-              >
-                {/* Time bar */}
-                <View style={styles.timeCol}>
-                  <Text style={styles.timeStart}>{item.start}</Text>
-                  <View style={styles.timeLine} />
-                  <Text style={styles.timeEnd}>{item.end || "~"}</Text>
+              <View key={item.id} style={s.slot}>
+                <View style={s.times}>
+                  <Text style={s.start}>{item.start}</Text>
+                  <View style={s.line} />
+                  <Text style={s.end}>{item.end}</Text>
                 </View>
-
-                {/* Content */}
-                <View
-                  style={[
-                    styles.slotContent,
-                    { borderLeftColor: subj?.color || COLORS.accent },
-                  ]}
-                >
-                  <View style={styles.slotInfo}>
-                    <Text style={styles.slotSubject}>
-                      {subj?.icon || ""} {subj?.name || ""}
-                    </Text>
-                    <Text style={styles.slotMeta}>
-                      {item.start} - {item.end || "待定"}
-                      {isNow && " · 现在"}
-                      {isPast && " · 已过"}
+                <View style={[s.item, isNow && { borderColor: COLORS.accent }]}>
+                  <View style={s.itemTop}>
+                    <Icon name={subj.glyph} color={subj.color} size={18} />
+                    <Text style={s.itemSubject}>
+                      {item.customName || subj.name}
                     </Text>
                   </View>
-                  <View style={styles.slotActions}>
-                    {isNow && <View style={styles.nowDot} />}
-                    <TouchableOpacity
-                      style={styles.iconAction}
-                      onPress={() => {
-                        setEditing(item);
-                        setShowEditor(true);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`编辑 ${subj?.name || "计划"}`}
-                    >
-                      <Text style={styles.editIcon}>✏️</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.iconAction}
-                      onPress={() => handleDelete(item.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`删除 ${subj?.name || "计划"}`}
-                    >
-                      <Text style={styles.delIcon}>🗑</Text>
-                    </TouchableOpacity>
+                  <Text style={s.itemMeta}>
+                    {minuteOf(item.end) - minuteOf(item.start)} min ·{" "}
+                    {isNow ? "进行中" : isPast ? "时间已过" : "待开始"}
+                  </Text>
+                  <View style={s.itemActions}>
+                    <IconButton
+                      name="edit"
+                      label={`编辑 ${item.customName || subj.name}`}
+                      onPress={() => openEditor(item)}
+                    />
+                    <IconButton
+                      name="delete"
+                      label={`删除 ${item.customName || subj.name}`}
+                      onPress={() =>
+                        Alert.alert(
+                          "删除计划",
+                          `${item.start} ${item.customName || subj.name}`,
+                          [
+                            { text: "取消", style: "cancel" },
+                            {
+                              text: "删除",
+                              style: "destructive",
+                              onPress: () =>
+                                savePlan(
+                                  plan.filter(
+                                    (existing) => existing.id !== item.id,
+                                  ),
+                                ),
+                            },
+                          ],
+                        )
+                      }
+                    />
                   </View>
                 </View>
               </View>
             );
           })
         )}
-        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* Editor Modal */}
-      <PlanEditor
-        visible={showEditor}
-        initial={editing}
-        onSave={handleSaveItem}
-        onClose={() => {
-          setShowEditor(false);
-          setEditing(null);
-        }}
-      />
-    </View>
-  );
-}
-
-// Inline editor
-const ITEM_H = 44;
-const COPIES = 3;
-
-function TimeWheel({ value, onChange }) {
-  const [h, m] = (value || "08:00").split(":").map(Number);
-  const baseH = Array.from({ length: 24 }, (_, i) => i);
-  const baseM = Array.from({ length: 12 }, (_, i) => i * 5);
-  const hData = Array.from({ length: COPIES }, () => baseH).flat();
-  const mData = Array.from({ length: COPIES }, () => baseM).flat();
-  const hIdx = Math.floor(COPIES / 2) * 24 + h;
-  const mIdx = Math.floor(COPIES / 2) * 12 + m / 5;
-
-  const renderWheel = (ref, data, idx, curVal, onSnap) => (
-    <View style={{ width: 64, height: ITEM_H * 3, overflow: "hidden" }}>
-      <View
-        style={{
-          position: "absolute",
-          top: ITEM_H,
-          left: 0,
-          right: 0,
-          height: ITEM_H,
-          backgroundColor: COLORS.accent + "20",
-          borderRadius: 8,
-        }}
-      />
-      <View
-        style={{
-          position: "absolute",
-          top: ITEM_H,
-          left: 6,
-          right: 6,
-          height: 1,
-          backgroundColor: COLORS.accent + "50",
-        }}
-      />
-      <View
-        style={{
-          position: "absolute",
-          top: ITEM_H * 2,
-          left: 6,
-          right: 6,
-          height: 1,
-          backgroundColor: COLORS.accent + "50",
-        }}
-      />
-      <ScrollView
-        ref={ref}
-        showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_H}
-        disableIntervalMomentum={false}
-        decelerationRate={0.94}
-        onMomentumScrollEnd={onSnap}
-        contentOffset={{ x: 0, y: idx * ITEM_H }}
-        contentContainerStyle={{ paddingVertical: ITEM_H }}
+      <Sheet
+        visible={editor !== null}
+        onClose={() => setEditor(null)}
+        title={editor?.id ? "编辑计划" : "添加计划"}
       >
-        {data.map((v, i) => (
-          <View
-            key={i}
-            style={{
-              height: ITEM_H,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: v === curVal ? 20 : 15,
-                fontWeight: v === curVal ? "700" : "400",
-                color: v === curVal ? "#fff" : COLORS.text2,
-              }}
+        <Text style={s.fieldLabel}>科目</Text>
+        <View style={s.subjects}>
+          {Object.entries(SUBJECTS).map(([key, subj]) => (
+            <Pressable
+              key={key}
+              onPress={() => setSubject(key)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: subject === key }}
+              style={[s.chip, subject === key && { borderColor: subj.color }]}
             >
-              {String(v).padStart(2, "0")}
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  const onHSnap = (e) => {
-    const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(
-      `${String(baseH[i % 24]).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
-    );
-  };
-  const onMSnap = (e) => {
-    const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    onChange(
-      `${String(h).padStart(2, "0")}:${String((i % 12) * 5).padStart(2, "0")}`,
-    );
-  };
-
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        gap: 8,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text style={{ fontSize: 10, color: COLORS.text2 }}>时</Text>
-      {renderWheel(useRef(), hData, hIdx, h, onHSnap)}
-      <Text style={{ fontSize: 20, color: COLORS.text, fontWeight: "700" }}>
-        :
-      </Text>
-      {renderWheel(useRef(), mData, mIdx, m, onMSnap)}
-      <Text style={{ fontSize: 10, color: COLORS.text2 }}>分</Text>
-    </View>
-  );
-}
-
-function PlanEditor({ visible, initial, onSave, onClose }) {
-  const [subject, setSubject] = useState(initial?.subject || "english");
-  const [start, setStart] = useState(initial?.start || "08:00");
-  const [end, setEnd] = useState(initial?.end || "10:00");
-  const [customName, setCustomName] = useState(initial?.customName || "");
-
-  useEffect(() => {
-    if (initial) {
-      setSubject(initial.subject || "custom");
-      setStart(initial.start);
-      setEnd(initial.end || "10:00");
-      setCustomName(initial.customName || "");
-    } else {
-      AsyncStorage.getItem("last_schedule").then((d) => {
-        if (d) {
-          const v = JSON.parse(d);
-          setStart(v.start);
-          setEnd(v.end);
-          setSubject(v.subject || "english");
-          setCustomName(v.customName || "");
-        } else {
-          setStart("08:00");
-          setEnd("10:00");
-          setSubject("english");
-          setCustomName("");
-        }
-      });
-    }
-  }, [initial, visible]);
-
-  if (!visible) return null;
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={styles.editorOverlay}>
-        {/* Only top area closes on tap */}
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={styles.editorSheet}>
-          <View style={styles.editorHandle} />
-          <Text style={styles.editorTitle}>
-            {initial ? "编辑安排" : "添加安排"}
-          </Text>
-
-          <Text style={styles.fieldLabel}>科目</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 4 }}
-          >
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              {Object.entries(SUBJECTS).map(([key, subj]) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    styles.pickChip,
-                    subject === key &&
-                      !customName && {
-                        backgroundColor: subj.color + "33",
-                        borderColor: subj.color,
-                      },
-                  ]}
-                  onPress={() => {
-                    setSubject(key);
-                    setCustomName("");
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.pickChipText,
-                      subject === key &&
-                        !customName && { color: "#fff", fontWeight: "700" },
-                    ]}
-                  >
-                    {subj.icon} {subj.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          <TextInput
-            style={styles.customInput}
-            placeholder="或输入自定义项目名（如：复习线代、背单词...）"
-            placeholderTextColor={COLORS.text2}
-            value={customName}
-            onChangeText={(t) => {
-              setCustomName(t);
-              if (t) setSubject("custom");
-            }}
-          />
-
-          <Text style={styles.fieldLabel}>开始时间</Text>
-          <TimeWheel value={start} onChange={setStart} />
-
-          <Text style={styles.fieldLabel}>结束时间</Text>
-          <TimeWheel value={end} onChange={setEnd} />
-
-          <View style={styles.editorActions}>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => {
-                AsyncStorage.setItem(
-                  "last_schedule",
-                  JSON.stringify({ start, end, subject, customName }),
-                );
-                onClose();
-              }}
-            >
-              <Text style={styles.cancelTxt}>取消</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.saveBtn}
-              onPress={() => {
-                AsyncStorage.setItem(
-                  "last_schedule",
-                  JSON.stringify({ start, end, subject, customName }),
-                );
-                onSave({
-                  subject: customName ? "custom" : subject,
-                  customName: customName || undefined,
-                  start,
-                  end,
-                });
-              }}
-            >
-              <Text style={styles.saveTxt}>保存</Text>
-            </TouchableOpacity>
-          </View>
+              <Icon name={subj.glyph} size={17} color={subj.color} />
+              <Text style={s.chipText}>{subj.name}</Text>
+            </Pressable>
+          ))}
         </View>
-      </View>
-    </Modal>
+        <Text style={s.fieldLabel}>学习内容（选填）</Text>
+        <TextInput
+          accessibilityLabel="学习内容"
+          value={name}
+          onChangeText={setName}
+          maxLength={40}
+          placeholder="例如：阅读理解、线性代数"
+          placeholderTextColor={COLORS.text2}
+          style={ui.input}
+        />
+        <View style={s.timeInputs}>
+          {[
+            ["开始", start, setStart],
+            ["结束", end, setEnd],
+          ].map(([label, value, change]) => (
+            <View key={label} style={{ flex: 1 }}>
+              <Text style={s.fieldLabel}>{label}时间</Text>
+              {Platform.OS === "android" ? (
+                <Pressable
+                  onPress={() => openTime(value, change)}
+                  style={s.timeInput}
+                >
+                  <Icon name="timer" />
+                  <Text style={s.timeValue}>{value}</Text>
+                </Pressable>
+              ) : (
+                <TextInput
+                  accessibilityLabel={`${label}时间`}
+                  value={value}
+                  onChangeText={change}
+                  maxLength={5}
+                  style={[ui.input, { textAlign: "center" }]}
+                />
+              )}
+            </View>
+          ))}
+        </View>
+        <View style={{ height: 24 }} />
+        <ActionButton
+          title={saving ? "保存中" : "保存计划"}
+          onPress={save}
+          disabled={saving}
+        />
+      </Sheet>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 44 : 56,
-    paddingBottom: 12,
-  },
-  title: { fontSize: 24, fontWeight: "800", color: COLORS.text },
-  subtitle: { fontSize: 12, color: COLORS.text2, marginTop: 4 },
-  addBtn: {
-    minHeight: 44,
-    justifyContent: "center",
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  addBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  scroll: { flex: 1, paddingHorizontal: 20 },
-  overview: {
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  overviewTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  overviewLabel: { color: COLORS.text2, fontSize: 11, fontWeight: "700" },
-  overviewTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "800",
-    marginTop: 4,
-  },
-  overviewBadge: {
-    color: "#fff",
-    backgroundColor: COLORS.accent,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    overflow: "hidden",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  overviewMetrics: { flexDirection: "row", gap: 8, marginTop: 12 },
-  overviewMetric: {
-    flex: 1,
-    backgroundColor: COLORS.card2,
-    borderRadius: 12,
-    padding: 10,
-  },
-  metricStrong: { color: COLORS.text, fontSize: 15, fontWeight: "800" },
-  metricText: {
-    color: COLORS.text2,
-    fontSize: 10,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  hint: {
-    backgroundColor: "rgba(255,107,107,0.1)",
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 10,
-  },
-  hintText: {
-    fontSize: 12,
-    color: COLORS.text2,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-  empty: { alignItems: "center", paddingVertical: 60 },
-  emptyIcon: { fontSize: 32, marginBottom: 8 },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  emptySub: {
-    fontSize: 11,
-    color: COLORS.text2,
-    textAlign: "center",
-    lineHeight: 16,
-  },
-  // Time slots
-  slot: { flexDirection: "row", marginBottom: 6 },
-  slotNow: { opacity: 1 },
-  slotPast: { opacity: 0.45 },
-  timeCol: { width: 40, alignItems: "center", paddingTop: 6 },
-  timeStart: { fontSize: 10, fontWeight: "700", color: COLORS.text },
-  timeLine: {
-    flex: 1,
-    width: 1,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    marginVertical: 2,
-    minHeight: 12,
-  },
-  timeEnd: { fontSize: 9, color: COLORS.text2 },
-  slotContent: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 12,
-    borderLeftWidth: 3,
-    marginLeft: 6,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  slotInfo: { flex: 1 },
-  slotSubject: { fontSize: 12, fontWeight: "600", color: COLORS.text },
-  slotMeta: { fontSize: 10, color: COLORS.text2, marginTop: 1 },
-  slotActions: { flexDirection: "row", alignItems: "center" },
-  iconAction: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginVertical: -8,
-  },
-  nowDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.accent,
-  },
-  editIcon: { fontSize: 14, opacity: 0.5 },
-  delIcon: { fontSize: 14, opacity: 0.5 },
-  // Editor
-  editorOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "flex-end",
-  },
-  editorSheet: {
-    backgroundColor: COLORS.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-    maxHeight: "85%",
-  },
-  editorHandle: {
-    width: 36,
-    height: 4,
-    backgroundColor: COLORS.card2,
-    borderRadius: 2,
+const s = StyleSheet.create({
+  body: {
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    maxWidth: 640,
+    width: "100%",
     alignSelf: "center",
-    marginBottom: 16,
   },
-  editorTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginBottom: 16,
-  },
-  customInput: {
-    backgroundColor: COLORS.bg,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.card2,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  pickBtn: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 12,
-    paddingVertical: 10,
+  summary: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    paddingVertical: 12,
   },
-  pickBtnT: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  fieldLabel: {
+  total: {
+    fontSize: 42,
+    fontWeight: "500",
+    color: COLORS.text,
+    marginTop: 8,
+    fontVariant: ["tabular-nums"],
+  },
+  unit: { fontSize: 14, color: COLORS.text2 },
+  count: { color: COLORS.text, fontSize: 22 },
+  summaryRight: { gap: 8, alignItems: "flex-end" },
+  current: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 24,
+    marginBottom: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: COLORS.border,
+  },
+  currentLabel: { color: COLORS.text2, fontSize: 11 },
+  currentName: { color: COLORS.text, fontSize: 15, marginTop: 6 },
+  currentEnd: { color: COLORS.accent, fontSize: 11 },
+  slot: { flexDirection: "row", gap: 16, marginBottom: 16 },
+  times: { width: 44, alignItems: "center", paddingVertical: 8 },
+  start: {
+    color: COLORS.text,
     fontSize: 13,
     fontWeight: "600",
-    color: COLORS.text2,
-    marginBottom: 6,
-    marginTop: 4,
+    fontVariant: ["tabular-nums"],
   },
-  pickChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    backgroundColor: COLORS.card2,
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  pickChipText: { fontSize: 13, color: COLORS.text2 },
-  timePick: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: COLORS.card2,
-    marginBottom: 4,
-  },
-  timePickActive: { backgroundColor: COLORS.accent },
-  timePickText: { fontSize: 11, color: COLORS.text2 },
-  timePickTActive: { color: "#fff", fontWeight: "700" },
-  editorActions: { flexDirection: "row", gap: 12, marginTop: 20 },
-  cancelBtn: {
+  end: { color: COLORS.text2, fontSize: 11, fontVariant: ["tabular-nums"] },
+  line: {
+    width: 1,
     flex: 1,
-    backgroundColor: COLORS.card2,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
+    backgroundColor: COLORS.border,
+    marginVertical: 8,
+    minHeight: 18,
   },
-  cancelTxt: { color: COLORS.text2, fontSize: 15, fontWeight: "600" },
-  saveBtn: {
-    flex: 2,
-    backgroundColor: COLORS.accent,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
+  item: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: COLORS.card,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  saveTxt: { color: "#fff", fontSize: 15, fontWeight: "600" },
-});
-
-// Time wheel mini-styles
-const stl = StyleSheet.create({
-  tw: {
-    height: 40,
+  itemTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  itemSubject: { flex: 1, color: COLORS.text, fontSize: 15, lineHeight: 22 },
+  itemMeta: { color: COLORS.text2, fontSize: 11, marginTop: 10 },
+  itemActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: -10,
+    marginTop: 4,
+    marginRight: -8,
+  },
+  empty: { alignItems: "center", gap: 24, paddingVertical: 40 },
+  emptyTitle: { color: COLORS.text2, fontSize: 14 },
+  fieldLabel: {
+    color: COLORS.text2,
+    fontSize: 12,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  subjects: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    width: "47%",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    minHeight: 44,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 10,
-    marginVertical: 1,
+    flexDirection: "row",
+    gap: 10,
   },
-  twOn: { backgroundColor: COLORS.accent + "40" },
-  twT: { fontSize: 16, color: COLORS.text2 },
-  twTOn: { color: "#fff", fontWeight: "700", fontSize: 18 },
+  chipText: { color: COLORS.text, fontSize: 13 },
+  timeInputs: { flexDirection: "row", gap: 16 },
+  timeInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    backgroundColor: COLORS.bg,
+  },
+  timeValue: {
+    fontSize: 22,
+    color: COLORS.text,
+    fontVariant: ["tabular-nums"],
+  },
 });

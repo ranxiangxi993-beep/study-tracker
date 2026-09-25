@@ -2,21 +2,19 @@
   "expo": {
     "name": "研途",
     "slug": "study-tracker",
-    "version": "2.7",
+    "version": "2.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "backgroundColor": "#0f0f1a",
-    "plugins": [
-      "expo-notifications"
-    ],
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FAFBFA",
+    "plugins": ["expo-notifications"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kaoyan.studytimer"
     },
     "android": {
       "package": "com.kaoyan.studytimer",
-      "versionCode": 46,
+      "versionCode": 47,
       "adaptiveIcon": {
         "backgroundColor": "#0f0f1a",
         "foregroundImage": "./assets/android-icon-foreground.png",

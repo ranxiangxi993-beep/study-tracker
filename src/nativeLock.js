@@ -3,6 +3,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const L = NativeModules.StudyLock;
 
+export async function setStudyDeadline(endAt) {
+  if (L?.setStudyDeadline) await L.setStudyDeadline(endAt);
+}
+
 export async function isDeviceAdminActive() {
   if (!L?.isAdmin) return false;
   try {

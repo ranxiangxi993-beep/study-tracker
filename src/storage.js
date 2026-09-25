@@ -1,11 +1,36 @@
 // Pure AsyncStorage storage - no native SQLite dependency
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const SESSIONS_KEY = 'study_sessions';
-const GOALS_KEY = 'study_goals';
+const SESSIONS_KEY = "study_sessions";
+const GOALS_KEY = "study_goals";
+let mutationQueue = Promise.resolve();
+
+function mutateSessions(change) {
+  const result = mutationQueue.then(async () => {
+    const sessions = await getSessions();
+    const value = await change(sessions);
+    await saveSessions(sessions);
+    return value;
+  });
+  mutationQueue = result.catch(() => {});
+  return result;
+}
+
+function newId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // Local date helper (UTC+8 safe, unlike toISOString)
-export function localDate(d) { const t = d || new Date(); return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
+export function localDate(d) {
+  const t = d || new Date();
+  return (
+    t.getFullYear() +
+    "-" +
+    String(t.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(t.getDate()).padStart(2, "0")
+  );
+}
 
 // ====== Sessions ======
 
@@ -14,25 +39,25 @@ export async function getSessions() {
   return data ? JSON.parse(data) : [];
 }
 
- async function saveSessions(sessions) {
+async function saveSessions(sessions) {
   await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
 }
 
 // Start a new session
 export async function startSession(subject) {
-  const sessions = await getSessions();
-  const session = {
-    id: Date.now(),
-    subject,
-    start_time: new Date().toISOString(),
-    end_time: null,
-    duration: 0,
-    date: localDate(),
-    note: '',
-  };
-  sessions.push(session);
-  await saveSessions(sessions);
-  return session.id;
+  return mutateSessions((sessions) => {
+    const session = {
+      id: newId(),
+      subject,
+      start_time: new Date().toISOString(),
+      end_time: null,
+      duration: 0,
+      date: localDate(),
+      note: "",
+    };
+    sessions.push(session);
+    return session.id;
+  });
 }
 
 // Stop an active session.
@@ -40,71 +65,126 @@ export async function startSession(subject) {
 // （仅用于无暂停信息可恢复的僵尸会话清理）。修复：之前一律用 end-start 墙钟差，
 // 会把"暂停后挂着没结束"的那段时间也算进时长。
 export async function stopSession(sessionId, studySeconds = null) {
-  const sessions = await getSessions();
-  const idx = sessions.findIndex(s => s.id === sessionId);
-  if (idx === -1) return null;
-  const session = sessions[idx];
-  if (session.end_time) return session;
-  const dur = studySeconds != null
-    ? Math.max(0, Math.round(studySeconds))
-    : Math.floor((Date.now() - new Date(session.start_time)) / 1000);
-  // end_time 与 duration 保持一致：duration 已扣除暂停，不能再用墙钟 now 反推 end_time
-  session.end_time = new Date(new Date(session.start_time).getTime() + dur * 1000).toISOString();
-  session.duration = dur;
-  sessions[idx] = session;
-  await saveSessions(sessions);
-  return session;
+  if (studySeconds !== null && !Number.isFinite(studySeconds))
+    throw new Error("时长无效");
+  return mutateSessions((sessions) => {
+    const idx = sessions.findIndex((s) => s.id === sessionId);
+    if (idx === -1) return null;
+    const session = sessions[idx];
+    if (session.end_time) return session;
+    const dur =
+      studySeconds != null
+        ? Math.max(0, Math.round(studySeconds))
+        : Math.floor((Date.now() - new Date(session.start_time)) / 1000);
+    // end_time 与 duration 保持一致：duration 已扣除暂停，不能再用墙钟 now 反推 end_time
+    session.end_time = new Date(
+      new Date(session.start_time).getTime() + dur * 1000,
+    ).toISOString();
+    session.duration = dur;
+    sessions[idx] = session;
+    return session;
+  });
 }
 
 // Manually add a completed session (补录/手动记录). seconds 可正可负（负=扣减当天该科时长）
 export async function addManualSession(subject, seconds, date) {
-  const sessions = await getSessions();
-  const now = new Date();
-  sessions.push({
-    id: Date.now(),
-    subject,
-    start_time: now.toISOString(),
-    end_time: now.toISOString(),
-    duration: Math.round(seconds),
-    date: date || localDate(),
-    note: seconds < 0 ? '手动扣减' : '手动补录',
-    manual: true,
+  if (!Number.isFinite(seconds)) throw new Error("时长无效");
+  return mutateSessions((sessions) => {
+    const now = new Date();
+    if (seconds < 0) {
+      const available = sessions
+        .filter(
+          (s) => s.subject === subject && s.date === (date || localDate()),
+        )
+        .reduce((sum, s) => sum + s.duration, 0);
+      seconds = -Math.min(Math.max(0, available), Math.abs(seconds));
+    }
+    if (!seconds) return;
+    sessions.push({
+      id: newId(),
+      subject,
+      start_time: now.toISOString(),
+      end_time: now.toISOString(),
+      duration: Math.round(seconds),
+      date: date || localDate(),
+      note: seconds < 0 ? "手动扣减" : "手动补录",
+      manual: true,
+    });
   });
-  await saveSessions(sessions);
 }
 
 // 删除所有手动补录/扣减的记录（manual:true），不动真实计时记录。
 export async function clearManualSessions() {
-  const sessions = await getSessions();
-  const removed = sessions.filter(s => s.manual).length;
-  await saveSessions(sessions.filter(s => !s.manual));
-  return removed;
+  return mutateSessions((sessions) => {
+    const removed = sessions.filter((s) => s.manual).length;
+    const keep = sessions.filter((s) => !s.manual);
+    sessions.splice(0, sessions.length, ...keep);
+    return removed;
+  });
 }
 
-// 编辑一条记录的时长（分钟级补正/修改）。seconds 为新的总秒数（>0）。
-// 同步修正 end_time 以保持 start/end 一致，柱状图/饼图随之更新。
+// The editor receives a magnitude; a correction must remain a deduction.
 export async function updateSessionDuration(id, seconds) {
-  const sessions = await getSessions();
-  const idx = sessions.findIndex(s => s.id === id);
-  if (idx === -1) return null;
-  const s = sessions[idx];
-  s.duration = Math.max(0, Math.round(seconds));
-  if (s.start_time) s.end_time = new Date(new Date(s.start_time).getTime() + s.duration * 1000).toISOString();
-  sessions[idx] = s;
-  await saveSessions(sessions);
-  return s;
+  if (!Number.isFinite(seconds) || seconds < 0) throw new Error("时长无效");
+  return mutateSessions((sessions) => {
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+    const s = sessions[idx];
+    if (!s.end_time) throw new Error("正在计时的记录不可修改");
+    const magnitude = Math.max(0, Math.round(seconds));
+    if (s.duration < 0) {
+      const available = sessions
+        .filter(
+          (item) =>
+            item.id !== id &&
+            item.subject === s.subject &&
+            item.date === s.date,
+        )
+        .reduce((sum, item) => sum + item.duration, 0);
+      s.duration = -Math.min(magnitude, Math.max(0, available));
+    } else {
+      const otherTotal = sessions
+        .filter(
+          (item) =>
+            item.id !== id &&
+            item.subject === s.subject &&
+            item.date === s.date,
+        )
+        .reduce((sum, item) => sum + item.duration, 0);
+      if (otherTotal + magnitude < 0) throw new Error("请先调整当天的扣减记录");
+      s.duration = magnitude;
+    }
+    if (!s.manual && s.start_time)
+      s.end_time = new Date(
+        new Date(s.start_time).getTime() + s.duration * 1000,
+      ).toISOString();
+    sessions[idx] = s;
+    return s;
+  });
 }
 
 // Get active (unfinished) session
 export async function getActiveSession() {
   const sessions = await getSessions();
-  return sessions.find(s => !s.end_time) || null;
+  return sessions.find((s) => !s.end_time) || null;
 }
 
 // Delete a session
 export async function deleteSession(id) {
-  const sessions = await getSessions();
-  await saveSessions(sessions.filter(s => s.id !== id));
+  return mutateSessions((sessions) => {
+    const index = sessions.findIndex((s) => s.id === id);
+    if (index < 0) return;
+    const target = sessions[index];
+    const remaining = sessions
+      .filter(
+        (s) =>
+          s.id !== id && s.subject === target.subject && s.date === target.date,
+      )
+      .reduce((sum, s) => sum + s.duration, 0);
+    if (target.duration > 0 && remaining < 0)
+      throw new Error("请先删除或调整当天的扣减记录");
+    sessions.splice(index, 1);
+  });
 }
 
 // ====== Stats ======
@@ -112,9 +192,11 @@ export async function deleteSession(id) {
 export async function getTodayStats() {
   const sessions = await getSessions();
   const today = localDate();
-  const todaySessions = sessions.filter(s => s.date === today && s.duration !== 0);
+  const todaySessions = sessions.filter(
+    (s) => s.date === today && s.duration !== 0,
+  );
   const bySubject = {};
-  todaySessions.forEach(s => {
+  todaySessions.forEach((s) => {
     bySubject[s.subject] = (bySubject[s.subject] || 0) + s.duration;
   });
   return bySubject;
@@ -127,7 +209,7 @@ export async function getWeekStats() {
   const monday = new Date(today);
   monday.setDate(today.getDate() - dayOfWeek + 1);
 
-  const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
@@ -135,28 +217,38 @@ export async function getWeekStats() {
     const dateStr = localDate(d);
     // 柱状图反映这一天的全部时长（含手动补录）——手动补录本周时可指定具体某天，
     // 落到那天就该在柱状图上体现出来（与"区间合计/饼图"保持一致）。
-    const daySessions = sessions.filter(s => s.date === dateStr && s.duration !== 0);
+    const daySessions = sessions.filter(
+      (s) => s.date === dateStr && s.duration !== 0,
+    );
     const bySubject = {};
     let total = 0;
-    daySessions.forEach(s => {
+    daySessions.forEach((s) => {
       bySubject[s.subject] = (bySubject[s.subject] || 0) + s.duration;
       total += s.duration;
     });
-    days.push({ date: dateStr, weekday: weekdays[i], total_sec: total, subjects: bySubject });
+    days.push({
+      date: dateStr,
+      weekday: weekdays[i],
+      total_sec: total,
+      subjects: bySubject,
+    });
   }
   return days;
 }
 
 export async function getTotalStats() {
   const sessions = await getSessions();
-  const completed = sessions.filter(s => s.duration !== 0);
+  const completed = sessions.filter((s) => s.duration !== 0);
   const bySubject = {};
-  completed.forEach(s => {
+  completed.forEach((s) => {
     if (!bySubject[s.subject]) bySubject[s.subject] = { seconds: 0, count: 0 };
     bySubject[s.subject].seconds += s.duration;
     bySubject[s.subject].count += 1;
   });
-  return { total_sec: completed.reduce((sum, s) => sum + s.duration, 0), subjects: bySubject };
+  return {
+    total_sec: completed.reduce((sum, s) => sum + s.duration, 0),
+    subjects: bySubject,
+  };
 }
 
 // Get per-day study seconds for a year (for heatmap)
@@ -166,7 +258,8 @@ export async function getYearlyHeatmap(year) {
   const targetYear = year || now.getFullYear();
   const yearStart = new Date(targetYear, 0, 1);
   // For current year, only show up to today; for past years, full year
-  const endDate = targetYear === now.getFullYear() ? now : new Date(targetYear, 11, 31);
+  const endDate =
+    targetYear === now.getFullYear() ? now : new Date(targetYear, 11, 31);
   const days = {};
 
   // Initialize all days of the year with 0
@@ -176,7 +269,7 @@ export async function getYearlyHeatmap(year) {
   }
 
   // Sum durations per day（含手动补录，使日历/热力图与区间合计一致）
-  sessions.forEach(s => {
+  sessions.forEach((s) => {
     if (s.duration !== 0 && days[s.date] !== undefined) {
       days[s.date] += s.duration;
     }
@@ -188,12 +281,12 @@ export async function getYearlyHeatmap(year) {
 // Get stats for a specific date range
 export async function getStatsInRange(startDate, endDate) {
   const sessions = await getSessions();
-  const inRange = sessions.filter(s => {
+  const inRange = sessions.filter((s) => {
     return s.date >= startDate && s.date <= endDate && s.duration !== 0;
   });
   const bySubject = {};
   let total = 0;
-  inRange.forEach(s => {
+  inRange.forEach((s) => {
     bySubject[s.subject] = (bySubject[s.subject] || 0) + s.duration;
     total += s.duration;
   });
@@ -206,19 +299,19 @@ export async function getPeriodStats(period) {
   let startDate;
 
   switch (period) {
-    case 'day':
+    case "day":
       startDate = new Date(now);
       break;
-    case 'week': {
+    case "week": {
       const day = now.getDay() || 7;
       startDate = new Date(now);
       startDate.setDate(now.getDate() - day + 1);
       break;
     }
-    case 'month':
+    case "month":
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       break;
-    case 'year':
+    case "year":
       startDate = new Date(now.getFullYear(), 0, 1);
       break;
     default:
@@ -232,7 +325,10 @@ export async function getPeriodStats(period) {
 
 export async function getStreak() {
   const sessions = await getSessions();
-  const studied = (dateStr) => sessions.some(s => s.date === dateStr && s.duration > 0);
+  const studied = (dateStr) =>
+    sessions
+      .filter((s) => s.date === dateStr)
+      .reduce((sum, s) => sum + s.duration, 0) > 0;
   const today = new Date();
   // 今天还没学时，连续天数不清零——从昨天往前数（今天只是还没续上，不算断）。
   // 否则每天零点一过、在今天学习之前，火花都会先掉到 0，体验很挫。
@@ -250,27 +346,34 @@ export async function getStreak() {
 export async function getHistory(limit = 30, offset = 0) {
   const sessions = await getSessions();
   return sessions
-    .filter(s => s.duration !== 0)
+    .filter((s) => s.duration !== 0)
     .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
     .slice(offset, offset + limit);
 }
 
 export async function getHistoryCount() {
   const sessions = await getSessions();
-  return sessions.filter(s => s.duration !== 0).length;
+  return sessions.filter((s) => s.duration !== 0).length;
 }
 
-export async function getHistoryInRange(startDate, endDate, limit = 30, offset = 0) {
+export async function getHistoryInRange(
+  startDate,
+  endDate,
+  limit = 30,
+  offset = 0,
+) {
   const sessions = await getSessions();
   return sessions
-    .filter(s => s.duration !== 0 && s.date >= startDate && s.date <= endDate)
+    .filter((s) => s.duration !== 0 && s.date >= startDate && s.date <= endDate)
     .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
     .slice(offset, offset + limit);
 }
 
 export async function getHistoryCountInRange(startDate, endDate) {
   const sessions = await getSessions();
-  return sessions.filter(s => s.duration !== 0 && s.date >= startDate && s.date <= endDate).length;
+  return sessions.filter(
+    (s) => s.duration !== 0 && s.date >= startDate && s.date <= endDate,
+  ).length;
 }
 
 // ====== Goals ======
@@ -289,7 +392,7 @@ export async function setGoal(subject, minutes) {
 // ====== Helpers ======
 
 export function formatDuration(seconds) {
-  const neg = seconds < 0 ? '-' : '';
+  const neg = seconds < 0 ? "-" : "";
   const a = Math.abs(seconds);
   const h = Math.floor(a / 3600);
   const m = Math.floor((a % 3600) / 60);

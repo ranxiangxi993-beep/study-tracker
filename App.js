@@ -3,9 +3,13 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Text, View, StyleSheet, Alert } from "react-native";
+import { Text, View, StyleSheet, Alert, Platform } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { Icon } from "./src/components/UI";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // SDK 54 起 expo-file-system 默认导出改为新版 File/Directory API，
 // downloadAsync/cacheDirectory/getContentUriAsync 等旧方法移到 legacy 子模块
@@ -51,25 +55,36 @@ function bust(url) {
 // 通过镜像逐个尝试 fetch，任一成功即返回 Response
 async function fetchViaMirror(url) {
   for (const wrap of DL_MIRRORS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(wrap(bust(url)), { cache: "no-store" });
+      const res = await fetch(wrap(bust(url)), {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (res.ok) return res;
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   return null;
 }
 
 async function checkForUpdate() {
+  if (Platform.OS !== "android") return;
   try {
     // 直接按固定路径取 version.json（不再依赖 api.github.com 列资源），并走镜像
     const verUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/version.json`;
     const verRes = await fetchViaMirror(verUrl);
     if (!verRes) return;
     const { versionCode, versionName, apk } = await verRes.json();
-    if (!versionCode || versionCode <= APP_VERSION_CODE) return;
+    if (!Number.isInteger(versionCode) || versionCode <= APP_VERSION_CODE)
+      return;
     // 优先用 version.json 里带版本号的文件名（每版唯一 URL，绕开镜像对固定名 APK 的旧缓存
     // ——那正是"已安装相同版本、下到旧包"的真因）；缺失时回退固定名
     const apkName = apk || "app-release.apk";
+    if (!/^app-release(?:-v\d+)?\.apk$/.test(apkName)) return;
     const apkUrl = `https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${apkName}`;
     Alert.alert(
       "发现新版本",
@@ -122,15 +137,19 @@ async function downloadAndInstall(url) {
   );
 }
 
-function TabIcon({ emoji, label, focused }) {
+function TabIcon({ name, label, focused }) {
   return (
     <View style={{ alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ fontSize: 19 }}>{emoji}</Text>
+      <Icon
+        name={name}
+        size={22}
+        color={focused ? COLORS.accent : COLORS.text2}
+      />
       <Text
         style={{
           fontSize: 11,
           marginTop: 2,
-          color: focused ? "#fff" : COLORS.text2,
+          color: focused ? COLORS.accent : COLORS.text2,
           fontWeight: focused ? "700" : "500",
         }}
       >
@@ -141,22 +160,23 @@ function TabIcon({ emoji, label, focused }) {
 }
 
 function TabsNavigator() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
           backgroundColor: COLORS.card,
-          borderTopColor: "rgba(255,255,255,0.05)",
+          borderTopColor: COLORS.border,
           borderTopWidth: 1,
           paddingTop: 5,
-          paddingBottom: 4,
-          height: 66,
+          paddingBottom: Math.max(8, insets.bottom),
+          height: 64 + Math.max(8, insets.bottom),
         },
         tabBarItemStyle: { minHeight: 56 },
         tabBarHideOnKeyboard: true,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: "#fff",
+        tabBarActiveTintColor: COLORS.accent,
         tabBarInactiveTintColor: COLORS.text2,
       }}
     >
@@ -166,7 +186,7 @@ function TabsNavigator() {
         options={{
           tabBarAccessibilityLabel: "专注",
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="⏱️" label="专注" focused={focused} />
+            <TabIcon name="timer" label="专注" focused={focused} />
           ),
         }}
       />
@@ -176,7 +196,7 @@ function TabsNavigator() {
         options={{
           tabBarAccessibilityLabel: "计划",
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📅" label="计划" focused={focused} />
+            <TabIcon name="calendar" label="计划" focused={focused} />
           ),
         }}
       />
@@ -186,7 +206,7 @@ function TabsNavigator() {
         options={{
           tabBarAccessibilityLabel: "统计",
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📊" label="统计" focused={focused} />
+            <TabIcon name="chart" label="统计" focused={focused} />
           ),
         }}
       />
@@ -196,7 +216,7 @@ function TabsNavigator() {
         options={{
           tabBarAccessibilityLabel: "锁机",
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🔒" label="锁机" focused={focused} />
+            <TabIcon name="shield" label="锁机" focused={focused} />
           ),
         }}
       />
@@ -208,13 +228,13 @@ function AppContent() {
   const { bgUri } = useBg();
 
   const navTheme = {
-    dark: true,
+    dark: false,
     colors: {
       primary: COLORS.accent,
       background: bgUri ? "transparent" : COLORS.bg,
-      card: bgUri ? "rgba(26,26,46,0.92)" : COLORS.card,
+      card: COLORS.card,
       text: COLORS.text,
-      border: "rgba(255,255,255,0.05)",
+      border: COLORS.border,
       notification: COLORS.accent,
     },
   };
@@ -255,23 +275,40 @@ export default function App() {
       if (data) setBgUri(data);
     });
     // 申请通知权限后，把每日计划重建成系统级"每日重复"提醒（后台/杀进程也会响）
-    ensureNotifPermission().then(syncPlanNotifications);
-    setTimeout(checkForUpdate, 3000);
+    if (Platform.OS === "android")
+      ensureNotifPermission().then((granted) => {
+        if (granted) syncPlanNotifications();
+      });
+    const updateTimer = setTimeout(checkForUpdate, 3000);
+    return () => clearTimeout(updateTimer);
   }, []);
 
-  const updateBg = (uri) => {
+  const updateBg = async (uri) => {
+    await AsyncStorage.setItem("bg_image", uri);
+    const previous = bgUri;
     setBgUri(uri);
-    AsyncStorage.setItem("bg_image", uri);
+    if (
+      previous &&
+      previous !== uri &&
+      previous.startsWith(FileSystem.documentDirectory + "study-background-")
+    )
+      FileSystem.deleteAsync(previous, { idempotent: true }).catch(() => {});
   };
 
-  const resetBg = () => {
+  const resetBg = async () => {
+    await AsyncStorage.removeItem("bg_image");
+    const previous = bgUri;
     setBgUri(null);
-    AsyncStorage.removeItem("bg_image");
+    if (
+      previous &&
+      previous.startsWith(FileSystem.documentDirectory + "study-background-")
+    )
+      FileSystem.deleteAsync(previous, { idempotent: true }).catch(() => {});
   };
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <BgContext.Provider value={{ bgUri, setBgUri: updateBg, resetBg }}>
         <AppContent />
       </BgContext.Provider>
@@ -283,6 +320,6 @@ const styles = StyleSheet.create({
   bg: { flex: 1 },
   bgOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15,15,26,0.55)",
+    backgroundColor: "rgba(250,251,250,0.88)",
   },
 });

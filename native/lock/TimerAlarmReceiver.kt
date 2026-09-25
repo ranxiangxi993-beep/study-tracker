@@ -29,6 +29,7 @@ class TimerAlarmReceiver : BroadcastReceiver() {
 
         // 到点后立刻收起进行中通知，避免胶囊继续停留。
         LiveTimerService.stop(context)
+        StudyAccessibilityService.releaseExpiredStudyLock(context)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 

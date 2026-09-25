@@ -2,6 +2,9 @@ package com.kaoyan.studytimer.lock
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.app.NotificationManager
+import android.os.Build
+import androidx.core.app.NotificationManagerCompat
 import android.content.Context
 import android.content.Intent
 import android.os.PowerManager
@@ -16,6 +19,25 @@ class TimerAlarmModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModul
     override fun getName() = "TimerAlarm"
 
     private val REQ = 1001
+
+    @ReactMethod
+    fun capabilities(p: Promise) {
+        val ctx = reactApplicationContext
+        val alarm = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val notifications = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val enabled = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        val completion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notifications.getNotificationChannel("study-timer-complete-v3") else null
+        val live = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notifications.getNotificationChannel(LiveTimerService.CHANNEL_ID) else null
+        p.resolve(Arguments.createMap().apply {
+            putBoolean("notifications", enabled)
+            putBoolean("exactAlarm", Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarm.canScheduleExactAlarms())
+            putBoolean("completionAlert", enabled && (completion == null || completion.importance >= NotificationManager.IMPORTANCE_HIGH))
+            putBoolean("liveNotification", enabled && (live == null || live.importance > NotificationManager.IMPORTANCE_NONE))
+            putBoolean("liveRunning", LiveTimerService.isRunning)
+            putBoolean("fullScreen", Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent())
+            putBoolean("native", true)
+        })
+    }
 
     // 用于 cancel 的等价 PendingIntent（PendingIntent 匹配只看 component/action，不看 extra）
     private fun alarmPendingIntent(): PendingIntent {

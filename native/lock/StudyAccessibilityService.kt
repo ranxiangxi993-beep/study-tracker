@@ -17,6 +17,16 @@ class StudyAccessibilityService : AccessibilityService() {
         var lockActive = false
         var lockLevel = "strong"
         val whitelist = mutableSetOf<String>()
+
+        fun releaseExpiredStudyLock(context: Context) {
+            val prefs = context.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            val deadline = prefs.getLong("study_end_at", 0L)
+            if (deadline > 0L && System.currentTimeMillis() >= deadline) {
+                lockActive = false
+                prefs.edit().putBoolean("lock_active", false).remove("study_end_at").apply()
+                LockForegroundService.stop(context)
+            }
+        }
     }
 
     private var lastToastTime = 0L
@@ -24,10 +34,13 @@ class StudyAccessibilityService : AccessibilityService() {
     private val lockHandler = Handler(Looper.getMainLooper())
     private var pendingLock: Runnable? = null
     private var lastAllowedTime = 0L
+    private val essentialPackages = mutableSetOf<String>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        releaseExpiredStudyLock(this)
+        loadEssentialPackages()
         val prefs = getSharedPreferences("study_lock", Context.MODE_PRIVATE)
         // 国产 ROM 杀掉进程后系统会重启无障碍服务：从持久化标志恢复锁定状态，
         // 而不是清零，否则"锁一下就没了"。
@@ -51,6 +64,7 @@ class StudyAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        releaseExpiredStudyLock(this)
         val eventType = event?.eventType ?: return
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
@@ -96,6 +110,8 @@ class StudyAccessibilityService : AccessibilityService() {
         pendingLock?.let { lockHandler.removeCallbacks(it) }
         val runnable = Runnable {
             pendingLock = null
+            releaseExpiredStudyLock(this)
+            if (!lockActive) return@Runnable
             val nowRoot = rootInActiveWindow?.packageName?.toString() ?: ""
             if (nowRoot.isNotEmpty() && isAllowed(nowRoot)) {
                 lastAllowedTime = System.currentTimeMillis()
@@ -120,6 +136,7 @@ class StudyAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
         return try {
             windows.any { w ->
+                if (!w.isActive && !w.isFocused) return@any false
                 val wPkg = try { w.root?.packageName?.toString() } catch (_: Exception) { null } ?: ""
                 wPkg.isNotEmpty() && isWhitelisted(wPkg)
             }
@@ -131,32 +148,24 @@ class StudyAccessibilityService : AccessibilityService() {
 
     private fun isSystem(pkg: String): Boolean {
         if (pkg.isEmpty() || pkg == "android") return true
-        if (pkg.startsWith("com.android.")) return true
-        if (pkg.startsWith("com.google.android.")) return true
-        if (pkg.startsWith("com.miui.") || pkg.startsWith("com.xiaomi.")) return true
-        if (pkg.startsWith("com.lbe.security.")) return true
-        if (pkg.startsWith("com.oppo.") || pkg.startsWith("com.coloros.") ||
-            pkg.startsWith("com.oplus.")) return true   // 新版 ColorOS/OPPO 用 oplus 前缀
-        if (pkg.startsWith("com.realme.")) return true
-        if (pkg.startsWith("com.huawei.") || pkg.startsWith("com.hihon.")) return true
-        if (pkg.startsWith("com.honor.")) return true
-        if (pkg.startsWith("com.samsung.") || pkg.startsWith("com.sec.")) return true
-        if (pkg.startsWith("com.vivo.") || pkg.startsWith("com.bbk.")) return true
-        if (pkg.startsWith("com.oneplus.")) return true
-        if (pkg.startsWith("com.meizu.")) return true
-        if (pkg.startsWith("com.zui.") || pkg.startsWith("com.lenovo.")) return true
-        if (pkg.startsWith("com.asus.")) return true
-        if (pkg.startsWith("com.lge.") || pkg.startsWith("com.sony.") || pkg.startsWith("com.nothing.")) return true
+        if (essentialPackages.contains(pkg)) return true
 
         // 各厂商"应用加密/指纹·人脸·密码验证/锁屏"界面统一放行：打开白名单 App 时
         // 弹出的这类验证界面不应被踢回桌面（如 ColorOS 应用加密的指纹验证界面）。
         // 这些关键字几乎不可能出现在需要被锁的普通应用包名里，故安全。
-        if (pkg.contains("safecenter") || pkg.contains("securitycenter") ||
+        val systemOwned = runCatching {
+            packageManager.getApplicationInfo(pkg, 0).flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+        }.getOrDefault(false)
+        if (systemOwned && (pkg.contains("safecenter") || pkg.contains("securitycenter") ||
             pkg.contains("keyguard") || pkg.contains("fingerprint") ||
             pkg.contains("biometric") || pkg.contains("applock") ||
-            pkg.contains("facecheck") || pkg.contains("faceunlock")) return true
+            pkg.contains("facecheck") || pkg.contains("faceunlock"))) return true
 
         val knownSystem = setOf(
+            "com.android.settings", "com.android.phone", "com.android.server.telecom",
+            "com.android.dialer", "com.google.android.dialer", "com.android.emergency",
+            "com.oplus.safecenter", "com.oplus.securitypermission", "com.coloros.securitypermission",
+            "com.oplus.battery", "com.coloros.oppoguardelf", "com.coloros.sceneservice",
             "com.oppo.launcher", "com.huawei.android.launcher",
             "com.sec.android.app.launcher", "com.miui.home", "com.coloros.launcher",
             "com.google.android.apps.nexuslauncher",
@@ -175,6 +184,21 @@ class StudyAccessibilityService : AccessibilityService() {
             "com.miui.securitycenter",
         )
         return knownSystem.contains(pkg)
+    }
+
+    private fun loadEssentialPackages() {
+        essentialPackages.clear()
+        runCatching {
+            val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            packageManager.resolveActivity(home, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                ?.activityInfo?.packageName?.let { essentialPackages.add(it) }
+            val input = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            input.enabledInputMethodList.forEach { essentialPackages.add(it.packageName) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val telecom = getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
+                telecom.defaultDialerPackage?.let { essentialPackages.add(it) }
+            }
+        }
     }
 
     private fun isWhitelisted(pkg: String): Boolean {

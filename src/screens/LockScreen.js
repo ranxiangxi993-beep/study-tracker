@@ -10,12 +10,27 @@ import {
   Pressable,
   Platform,
   AppState,
+  TextInput,
+  Switch,
+  DeviceEventEmitter,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { COLORS } from "../constants";
 import { useBg } from "../../App";
 import DefaultBackdrop from "../components/DefaultBackdrop";
+import { PageHeader, Icon, IconButton, ui } from "../components/UI";
+import {
+  getTimerCapabilities,
+  openNotificationSettings,
+  openExactAlarmSettings,
+  openFullScreenIntentSettings,
+} from "../notify";
+import {
+  parseTimer,
+  TIMER_STATE_KEY,
+  TIMER_INTERRUPT_EVENT,
+} from "../timerState";
 import {
   isAccessibilityEnabled,
   isAccessibilitySettingOn,
@@ -36,7 +51,7 @@ const LEVELS = [
   { key: "strong", label: "强力", desc: "学习段绑定" },
 ];
 
-export default function LockScreen() {
+export default function LockScreen({ navigation }) {
   const { bgUri } = useBg();
   const [accessOn, setAccessOn] = useState(false);
   const [settingOn, setSettingOn] = useState(false);
@@ -49,6 +64,9 @@ export default function LockScreen() {
   const [apps, setApps] = useState([]);
   const [wlPkgs, setWlPkgs] = useState([]);
   const [loadingApps, setLoadingApps] = useState(false);
+  const [search, setSearch] = useState("");
+  const [permissions, setPermissions] = useState({ native: false });
+  const [inStudy, setInStudy] = useState(false);
 
   const refresh = useCallback(async () => {
     const [
@@ -77,6 +95,9 @@ export default function LockScreen() {
     if (savedLevel) setLevel(savedLevel === "normal" ? "medium" : savedLevel);
     if (savedBind !== null) setBindStudy(savedBind === "1");
     setWlPkgs(saved);
+    setPermissions(await getTimerCapabilities());
+    const timer = parseTimer(await AsyncStorage.getItem(TIMER_STATE_KEY));
+    setInStudy(!!timer && !timer.paused && timer.mode === "work");
   }, []);
 
   useFocusEffect(
@@ -90,6 +111,10 @@ export default function LockScreen() {
   );
 
   const startLock = async () => {
+    if (level === "strong" && bindStudy && !inStudy) {
+      navigation.navigate("Timer");
+      return;
+    }
     const enabled = await isAccessibilityEnabled();
     if (!enabled) {
       Alert.alert(
@@ -123,8 +148,25 @@ export default function LockScreen() {
           text: "确认解锁",
           style: "destructive",
           onPress: async () => {
-            await unlockScreen();
+            if (!(await unlockScreen())) {
+              Alert.alert(
+                "解锁未完成",
+                "请重试，或在系统无障碍设置中关闭研途服务。",
+              );
+              return;
+            }
+            const timer = parseTimer(
+              await AsyncStorage.getItem(TIMER_STATE_KEY),
+            );
+            if (timer?.boundLock) {
+              await AsyncStorage.setItem(
+                "timer_interrupt_requested",
+                String(Date.now()),
+              );
+              DeviceEventEmitter.emit(TIMER_INTERRUPT_EVENT);
+            }
             setLocked(false);
+            setInStudy(false);
           },
         },
       ],
@@ -132,8 +174,9 @@ export default function LockScreen() {
   };
 
   const stopLock = async () => {
-    await unlockScreen();
-    setLocked(false);
+    if (await unlockScreen()) setLocked(false);
+    else
+      Alert.alert("解锁未完成", "请重试，或在系统无障碍设置中关闭研途服务。");
   };
 
   const openApps = async () => {
@@ -154,7 +197,46 @@ export default function LockScreen() {
 
   const permissionRows = [
     { label: "无障碍服务", ok: accessOn, action: openAccessibilitySettings },
-    { label: "系统开关状态", ok: settingOn, action: openAccessibilitySettings },
+    {
+      label: "系统通知",
+      ok: permissions.notifications,
+      action: openNotificationSettings,
+      state: !permissions.native
+        ? "仅 APK 可检测"
+        : permissions.notifications
+          ? "已允许"
+          : "未允许",
+    },
+    {
+      label: "精确闹钟",
+      ok: permissions.exactAlarm,
+      action: openExactAlarmSettings,
+      state: !permissions.native
+        ? "仅 APK 可检测"
+        : permissions.exactAlarm
+          ? "已允许"
+          : "未允许",
+    },
+    {
+      label: "结束提醒",
+      ok: permissions.completionAlert,
+      action: openNotificationSettings,
+      state: !permissions.native
+        ? "仅 APK 可检测"
+        : permissions.completionAlert
+          ? "已允许"
+          : "通知被关闭或静音",
+    },
+    {
+      label: "全屏提醒",
+      ok: permissions.fullScreen,
+      action: openFullScreenIntentSettings,
+      state: !permissions.native
+        ? "仅 APK 可检测"
+        : permissions.fullScreen
+          ? "已允许"
+          : "可选权限",
+    },
     {
       label: "电池优化",
       ok: batteryOk,
@@ -176,7 +258,9 @@ export default function LockScreen() {
       ? "离开研途时只做低频提醒，不会强制返回。"
       : level === "medium"
         ? "开启后拦截白名单外应用，需要手动关闭。"
-        : "开始学习时自动拦截白名单外应用，学习段结束后自动解除。";
+        : bindStudy
+          ? "随学习段开启，暂停或结束时自动解除。"
+          : "手动开启拦截，可随时应急解锁。";
   const stopLabel =
     level === "light"
       ? "停止提醒"
@@ -187,17 +271,13 @@ export default function LockScreen() {
   return (
     <View style={[styles.container, { backgroundColor: "transparent" }]}>
       {!bgUri && <DefaultBackdrop />}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>专注锁</Text>
-          <Text style={styles.subTitle}>权限、白名单和应急解锁</Text>
-        </View>
+      <PageHeader title="专注锁" subtitle="把注意力，留给当下">
         <View style={[styles.statePill, locked && styles.statePillOn]}>
           <Text style={[styles.stateText, locked && styles.stateTextOn]}>
             {locked ? "运行中" : "待开启"}
           </Text>
         </View>
-      </View>
+      </PageHeader>
 
       <ScrollView
         style={styles.scroll}
@@ -206,10 +286,18 @@ export default function LockScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.shield}>
-            <Text style={styles.shieldIcon}>⌾</Text>
+            <Icon
+              name={locked ? "shield-check" : "shield"}
+              size={42}
+              color={locked ? COLORS.success : COLORS.accent}
+            />
           </View>
           <Text style={styles.heroTitle}>
-            {locked ? `${activeLevel.label}模式运行中` : "准备进入专注锁"}
+            {locked
+              ? `${activeLevel.label}模式运行中`
+              : bindStudy && level === "strong"
+                ? "随学习开启，结束即放松"
+                : "留出不被打扰的时间"}
           </Text>
           <Text style={styles.heroCopy}>{levelCopy}</Text>
           <TouchableOpacity
@@ -223,7 +311,11 @@ export default function LockScreen() {
             }
           >
             <Text style={styles.primaryText}>
-              {locked ? stopLabel : `开启${activeLevel.label}模式`}
+              {locked
+                ? stopLabel
+                : level === "strong" && bindStudy && !inStudy
+                  ? "去开始学习"
+                  : `开启${activeLevel.label}模式`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -240,6 +332,7 @@ export default function LockScreen() {
                   await AsyncStorage.setItem("lock_level", item.key);
                   if (locked) await lockScreen(item.key);
                 }}
+                disabled={inStudy}
                 accessibilityRole="button"
                 accessibilityState={{ selected: level === item.key }}
               >
@@ -307,7 +400,7 @@ export default function LockScreen() {
             title="绑定学习段"
             desc="仅强力模式：开始学习自动开启，结束后自动解除。"
             value={bindStudy}
-            disabled={level !== "strong"}
+            disabled={level !== "strong" || inStudy}
             onPress={async () => {
               const next = !bindStudy;
               setBindStudy(next);
@@ -317,7 +410,9 @@ export default function LockScreen() {
           <View style={styles.ruleInfo}>
             <Text style={styles.ruleInfoTitle}>学习段结束自动放松</Text>
             <Text style={styles.ruleInfoText}>
-              倒计时结束、手动结束或切换到休息段都会解除强力锁。
+              {inStudy
+                ? "当前学习段进行中，锁机强度与绑定设置在本段结束后可调整。"
+                : "电话、系统设置和输入法始终可用。其他应用按白名单放行。"}
             </Text>
           </View>
           <TouchableOpacity style={styles.manageRow} onPress={openApps}>
@@ -327,14 +422,14 @@ export default function LockScreen() {
                 按手机已安装应用选择，当前 {wlPkgs.length} 个
               </Text>
             </View>
-            <Text style={styles.manageArrow}>›</Text>
+            <Icon name="right" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.unlockBox}>
           <Text style={styles.unlockTitle}>应急解锁规则</Text>
           <Text style={styles.unlockText}>
-            误锁时可以解除；建议只在医疗、电话、支付等真实紧急场景使用。
+            随时可解除拦截，已完成的学习时间会保留。
           </Text>
         </View>
       </ScrollView>
@@ -349,6 +444,14 @@ export default function LockScreen() {
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.handle} />
             <Text style={styles.sheetTitle}>白名单应用</Text>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              style={[ui.input, { marginBottom: 16 }]}
+              placeholder="搜索手机应用"
+              placeholderTextColor={COLORS.text2}
+              accessibilityLabel="搜索白名单应用"
+            />
             <ScrollView
               style={{ maxHeight: 420 }}
               showsVerticalScrollIndicator={false}
@@ -358,28 +461,40 @@ export default function LockScreen() {
               ) : apps.length === 0 ? (
                 <Text style={styles.empty}>未获取到应用列表</Text>
               ) : (
-                apps.map((app) => (
-                  <TouchableOpacity
-                    key={app.pkg}
-                    style={styles.appRow}
-                    onPress={() => toggleApp(app.pkg)}
-                  >
-                    <View
-                      style={[
-                        styles.appCheck,
-                        wlPkgs.includes(app.pkg) && styles.appCheckOn,
-                      ]}
+                apps
+                  .filter((app) =>
+                    `${app.name} ${app.pkg}`
+                      .toLowerCase()
+                      .includes(search.toLowerCase()),
+                  )
+                  .map((app) => (
+                    <TouchableOpacity
+                      key={app.pkg}
+                      style={styles.appRow}
+                      onPress={() => toggleApp(app.pkg)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: wlPkgs.includes(app.pkg) }}
                     >
-                      {wlPkgs.includes(app.pkg) && (
-                        <Text style={styles.appCheckText}>✓</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.appName}>{app.name}</Text>
-                      <Text style={styles.appPkg}>{app.pkg}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
+                      <View
+                        style={[
+                          styles.appCheck,
+                          wlPkgs.includes(app.pkg) && styles.appCheckOn,
+                        ]}
+                      >
+                        {wlPkgs.includes(app.pkg) && (
+                          <Icon
+                            name="check"
+                            color={COLORS.accentText}
+                            size={16}
+                          />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.appName}>{app.name}</Text>
+                        <Text style={styles.appPkg}>{app.pkg}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
               )}
             </ScrollView>
           </Pressable>
@@ -391,21 +506,19 @@ export default function LockScreen() {
 
 function ToggleRow({ title, desc, value, disabled = false, onPress }) {
   return (
-    <TouchableOpacity
-      style={[styles.toggleRow, disabled && styles.toggleRowDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="switch"
-      accessibilityState={{ checked: value, disabled }}
-    >
+    <View style={[styles.toggleRow, disabled && styles.toggleRowDisabled]}>
       <View style={{ flex: 1 }}>
         <Text style={styles.toggleTitle}>{title}</Text>
         <Text style={styles.toggleDesc}>{desc}</Text>
       </View>
-      <View style={[styles.switch, value && styles.switchOn]}>
-        <View style={[styles.knob, value && styles.knobOn]} />
-      </View>
-    </TouchableOpacity>
+      <Switch
+        accessibilityLabel={title}
+        value={value}
+        disabled={disabled}
+        onValueChange={onPress}
+        trackColor={{ false: COLORS.card2, true: COLORS.accent }}
+      />
+    </View>
   );
 }
 
@@ -434,22 +547,24 @@ const styles = StyleSheet.create({
     borderColor: COLORS.success,
   },
   stateText: { color: COLORS.text2, fontSize: 12, fontWeight: "700" },
-  stateTextOn: { color: "#fff" },
+  stateTextOn: { color: COLORS.success },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: 20, paddingBottom: 28 },
+  content: {
+    paddingHorizontal: 24,
+    paddingBottom: 28,
+    maxWidth: 640,
+    width: "100%",
+    alignSelf: "center",
+  },
   hero: {
     alignItems: "center",
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical: 16,
   },
   shield: {
-    width: 92,
-    height: 104,
+    width: 80,
+    height: 80,
     borderRadius: 40,
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.card2,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
@@ -466,26 +581,24 @@ const styles = StyleSheet.create({
   primary: {
     marginTop: 16,
     backgroundColor: COLORS.accent,
-    borderRadius: 16,
+    borderRadius: 8,
     paddingVertical: 13,
     alignItems: "center",
     alignSelf: "stretch",
   },
   primaryMuted: { backgroundColor: COLORS.lock },
-  primaryText: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  primaryText: { color: COLORS.accentText, fontSize: 15, fontWeight: "700" },
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 14,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical: 24,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
   },
   sectionTitle: {
-    color: COLORS.text2,
-    fontSize: 12,
-    fontWeight: "800",
-    marginBottom: 10,
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 16,
   },
   levelRow: { flexDirection: "row", gap: 8 },
   level: {
@@ -502,7 +615,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent + "25",
   },
   levelLabel: { color: COLORS.text2, fontSize: 13, fontWeight: "800" },
-  levelLabelOn: { color: "#fff" },
+  levelLabelOn: { color: COLORS.accent },
   levelDesc: { color: COLORS.text2, fontSize: 9, marginTop: 4 },
   checkRow: {
     flexDirection: "row",
@@ -589,7 +702,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
   },
-  unlockTitle: { color: "#ffe1a8", fontSize: 14, fontWeight: "800" },
+  unlockTitle: { color: COLORS.warning, fontSize: 14, fontWeight: "600" },
   unlockText: {
     color: COLORS.text2,
     fontSize: 12,

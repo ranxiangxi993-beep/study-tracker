@@ -1,219 +1,210 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform, StatusBar,
-} from 'react-native';
-import Svg, { Circle as SvgCircle, Defs, LinearGradient, Stop } from 'react-native-svg';
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS } from '../constants';
-import { getDailyQuote } from '../quotes';
+  View,
+  Text,
+  Pressable,
+  TextInput,
+  ScrollView,
+  StyleSheet,
+  Platform,
+  Alert,
+} from "react-native";
+import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { COLORS } from "../constants";
+import { dateKey } from "../statsModel";
+import { useBg } from "../../App";
+import DefaultBackdrop from "../components/DefaultBackdrop";
+import {
+  PageHeader,
+  IconButton,
+  Icon,
+  Section,
+  Sheet,
+  ActionButton,
+  ui,
+} from "../components/UI";
 
-const KAOYAN_TARGET = new Date(2026, 11, 20, 9, 0, 0);
-
-const PHASES = [
-  { minDays: 150, label: '基础积累期', color: '#4A90D9' },
-  { minDays: 90,  label: '强化提升期', color: '#9B59B6' },
-  { minDays: 30,  label: '冲刺备考期', color: '#f39c12' },
-  { minDays: 0,   label: '最终决战期', color: '#e74c3c' },
-];
-
+function parseDate(value) {
+  const parts = value.split("-").map(Number);
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  return dateKey(date) === value ? date : null;
+}
 export default function CountdownScreen({ navigation }) {
+  const { bgUri } = useBg();
+  const [target, setTarget] = useState("2026-12-20");
+  const [start, setStart] = useState(null);
   const [now, setNow] = useState(new Date());
-  const [studyStart, setStudyStart] = useState(null);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerValue, setPickerValue] = useState(new Date());
-  const [quote] = useState(() => getDailyQuote());
-
-  // Android 用命令式 API 打开原生弹窗：它独立于 React 渲染，
-  // 不会被每秒刷新（now 更新）重建/冲回今天。iOS 仍用内联组件。
-  const openPicker = () => {
-    const current = studyStart || new Date();
-    if (Platform.OS === 'android') {
-      DateTimePickerAndroid.open({
-        value: current,
-        mode: 'date',
-        minimumDate: new Date(2024, 0, 1),
-        maximumDate: KAOYAN_TARGET,
-        onChange: (e, date) => {
-          if (e.type === 'set' && date) saveStart(date);
-        },
-      });
-    } else {
-      setPickerValue(current);
-      setShowPicker(true);
+  const [editing, setEditing] = useState(null);
+  const [input, setInput] = useState("");
+  useEffect(() => {
+    AsyncStorage.multiGet(["exam_target_date", "kaoyan_study_start"]).then(
+      (entries) => {
+        const saved = Object.fromEntries(entries);
+        if (saved.exam_target_date && parseDate(saved.exam_target_date))
+          setTarget(saved.exam_target_date);
+        if (saved.kaoyan_study_start) {
+          const date = new Date(saved.kaoyan_study_start);
+          if (Number.isFinite(date.getTime())) setStart(dateKey(date));
+        }
+      },
+    );
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+  const targetDate = parseDate(target);
+  const today = parseDate(dateKey(now));
+  const days = Math.max(0, Math.round((targetDate - today) / 86400000));
+  const studied = start
+    ? Math.max(0, Math.round((today - parseDate(start)) / 86400000) + 1)
+    : 0;
+  const progress = start
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          ((today - parseDate(start)) /
+            Math.max(1, targetDate - parseDate(start))) *
+            100,
+        ),
+      )
+    : 0;
+  const save = async (kind, value) => {
+    const date = parseDate(value);
+    if (!date || (kind === "start" && value > dateKey()))
+      return Alert.alert("请输入有效日期", "备考开始日期不能晚于今天。");
+    try {
+      await AsyncStorage.setItem(
+        kind === "target" ? "exam_target_date" : "kaoyan_study_start",
+        kind === "target" ? value : date.toISOString(),
+      );
+      if (kind === "target") setTarget(value);
+      else setStart(value);
+      setEditing(null);
+    } catch {
+      Alert.alert("日期未能保存");
     }
   };
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    AsyncStorage.getItem('kaoyan_study_start').then(v => {
-      if (v) setStudyStart(new Date(v));
-    });
-    return () => clearInterval(t);
-  }, []);
-
-  const saveStart = (date) => {
-    setStudyStart(date);
-    AsyncStorage.setItem('kaoyan_study_start', date.toISOString());
+  const pick = (kind) => {
+    const value = kind === "target" ? target : start || dateKey();
+    if (Platform.OS === "android")
+      DateTimePickerAndroid.open({
+        mode: "date",
+        value: parseDate(value) || new Date(),
+        minimumDate: new Date(2000, 0, 1),
+        maximumDate: kind === "start" ? new Date() : new Date(2100, 0, 1),
+        onChange: (event, date) => {
+          if (event.type === "set" && date) save(kind, dateKey(date));
+        },
+      });
+    else {
+      setInput(value);
+      setEditing(kind);
+    }
   };
-
-  const remainMs   = Math.max(0, KAOYAN_TARGET - now);
-  const days       = Math.floor(remainMs / 86400000);
-  const hours      = Math.floor((remainMs % 86400000) / 3600000);
-  const mins       = Math.floor((remainMs % 3600000) / 60000);
-  const secs       = Math.floor((remainMs % 60000) / 1000);
-  const phase      = PHASES.find(p => days >= p.minDays) || PHASES[PHASES.length - 1];
-
-  const elapsedMs  = studyStart ? Math.max(0, now - studyStart) : 0;
-  const totalMs    = studyStart ? Math.max(1, KAOYAN_TARGET - studyStart) : 1;
-  const pct        = studyStart ? Math.min(100, Math.round(elapsedMs / totalMs * 100)) : 0;
-  // 已备考天数按自然日计算，含起始当天(第1天)，不受设置开始日期时的时刻影响
-  const studiedDays = studyStart
-    ? Math.floor(
-        (new Date(now.getFullYear(), now.getMonth(), now.getDate())
-          - new Date(studyStart.getFullYear(), studyStart.getMonth(), studyStart.getDate()))
-        / 86400000) + 1
-    : 0;
-
-  const SZ = 260, CX = 130, CY = 130, R = 104;
-  const FULL = 2 * Math.PI * R;
-  const dash = (pct / 100) * FULL;
-  const pad  = n => String(n).padStart(2, '0');
-
   return (
-    <View style={s.wrap}>
-      <SafeAreaView style={s.safe}>
-        {/* 顶栏 */}
-        <View style={s.topBar}>
-          <View style={[s.phasePill, { borderColor: phase.color + '66', backgroundColor: phase.color + '18' }]}>
-            <Text style={[s.phaseText, { color: phase.color }]}>{phase.label}</Text>
-          </View>
-          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={s.closeBtn}>✕</Text>
-          </TouchableOpacity>
+    <View style={{ flex: 1 }}>
+      {!bgUri && <DefaultBackdrop />}
+      <PageHeader title="备考进度" subtitle="自己的节奏，自己的目标">
+        <IconButton
+          name="close"
+          label="返回专注"
+          onPress={() => navigation.goBack()}
+        />
+      </PageHeader>
+      <ScrollView contentContainerStyle={s.body}>
+        <View style={s.hero}>
+          <Icon name="target" size={32} color={COLORS.accent} />
+          <Text style={s.caption}>{days ? "距离目标日" : "已到目标日"}</Text>
+          <Text style={s.days}>{days}</Text>
+          <Text style={s.daysUnit}>天</Text>
+          <Pressable style={s.target} onPress={() => pick("target")}>
+            <Icon name="calendar" size={16} />
+            <Text style={s.targetText}>{target}</Text>
+            <Icon name="edit" size={16} />
+          </Pressable>
         </View>
-
-        {/* 大标题 */}
-        <Text style={s.title}>🎯 2026 考研倒计时</Text>
-
-        {/* 弧形 + 天数 */}
-        <View style={s.arcWrap}>
-          <Svg width={SZ} height={SZ}>
-            <Defs>
-              <LinearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0%" stopColor={phase.color} stopOpacity="1" />
-                <Stop offset="100%" stopColor={phase.color} stopOpacity="0.4" />
-              </LinearGradient>
-            </Defs>
-            <SvgCircle cx={CX} cy={CY} r={R}
-              stroke="rgba(255,255,255,0.07)" strokeWidth={12} fill="none" />
-            {studyStart && (
-              <SvgCircle cx={CX} cy={CY} r={R}
-                stroke="url(#g)" strokeWidth={12} fill="none"
-                strokeDasharray={`${dash} ${FULL}`}
-                strokeLinecap="round"
-                rotation="-90" origin={`${CX}, ${CY}`} />
-            )}
-          </Svg>
-
-          <View style={s.daysOverlay}>
-            <Text style={s.daysNum}>{days}</Text>
-            <Text style={s.daysUnit}>天</Text>
-            {studyStart
-              ? <Text style={s.pctHint}>已备考 {studiedDays} 天 · {pct}%</Text>
-              : <TouchableOpacity onPress={openPicker}>
-                  <Text style={[s.pctHint, { color: phase.color }]}>点击设置开始日期</Text>
-                </TouchableOpacity>
-            }
-          </View>
-        </View>
-
-        {/* 时分秒 */}
-        <View style={s.timeRow}>
-          {[{ v: pad(hours), u: '时' }, { v: pad(mins), u: '分' }, { v: pad(secs), u: '秒' }].map(({ v, u }, i) => (
-            <React.Fragment key={u}>
-              {i > 0 && <Text style={s.sep}>:</Text>}
-              <View style={s.timeCell}>
-                <Text style={s.timeVal}>{v}</Text>
-                <Text style={s.timeUnit}>{u}</Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-
-        {/* 语录 */}
-        <View style={s.quoteBox}>
-          <Text style={s.quoteText}>「{quote}」</Text>
-        </View>
-
-        {/* 修改开始日期按钮 */}
-        {studyStart && (
-          <TouchableOpacity style={s.editDateBtn} onPress={openPicker}>
-            <Text style={s.editDateText}>
-              📅 备考开始：{studyStart.toLocaleDateString('zh-CN')}  修改
+        <Section title="这一路的积累">
+          <View style={s.progressRow}>
+            <Text style={ui.muted}>已备考</Text>
+            <Text style={s.studied}>
+              {studied}
+              <Text style={s.small}> 天</Text>
             </Text>
-          </TouchableOpacity>
-        )}
-
-        {Platform.OS === 'ios' && showPicker && (
-          <DateTimePicker
-            value={pickerValue}
-            mode="date"
-            display="default"
-            minimumDate={new Date(2024, 0, 1)}
-            maximumDate={KAOYAN_TARGET}
-            onChange={(e, date) => {
-              setShowPicker(false);
-              if (e.type !== 'dismissed' && date) {
-                setPickerValue(date);
-                saveStart(date);
-              }
-            }}
-          />
-        )}
-      </SafeAreaView>
+          </View>
+          <View style={s.track}>
+            <View style={[s.fill, { width: `${progress}%` }]} />
+          </View>
+          <Pressable style={s.start} onPress={() => pick("start")}>
+            <Text style={ui.muted}>备考开始日期</Text>
+            <Text style={s.date}>{start || "未设置"}</Text>
+            <Icon name="right" />
+          </Pressable>
+        </Section>
+        <ActionButton
+          title="开始今天的学习"
+          icon="play"
+          onPress={() => navigation.goBack()}
+        />
+      </ScrollView>
+      <Sheet
+        visible={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing === "target" ? "目标日期" : "备考开始日期"}
+      >
+        <TextInput
+          style={[ui.input, { marginVertical: 20 }]}
+          value={input}
+          onChangeText={setInput}
+          accessibilityLabel="日期"
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={COLORS.text2}
+        />
+        <ActionButton title="保存日期" onPress={() => save(editing, input)} />
+      </Sheet>
     </View>
   );
 }
-
 const s = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: COLORS.bg },
-  safe: {
-    flex: 1, alignItems: 'center', paddingHorizontal: 24,
-    // Android 的 SafeAreaView 不会自动避开状态栏，手动加状态栏高度，避免顶栏与状态栏重合
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0,
+  body: {
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
   },
-  topBar: {
-    width: '100%', flexDirection: 'row',
-    justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 8, paddingBottom: 4,
+  hero: { alignItems: "center", paddingVertical: 40 },
+  caption: { color: COLORS.text2, fontSize: 14, marginTop: 24 },
+  days: {
+    color: COLORS.text,
+    fontSize: 104,
+    fontWeight: "500",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 0,
   },
-  phasePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  phaseText: { fontSize: 11, fontWeight: '700' },
-  closeBtn: { fontSize: 18, color: COLORS.text2, paddingHorizontal: 4 },
-  title: { fontSize: 16, fontWeight: '700', color: COLORS.text2, marginBottom: 8, marginTop: 4 },
-  arcWrap: { alignItems: 'center', justifyContent: 'center' },
-  daysOverlay: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  daysNum: { fontSize: 88, fontWeight: '900', color: COLORS.text, letterSpacing: -4, lineHeight: 96 },
-  daysUnit: { fontSize: 18, color: COLORS.text2, marginTop: -4 },
-  pctHint: { fontSize: 12, color: COLORS.text2, marginTop: 6, opacity: 0.85 },
-  timeRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    gap: 8, marginTop: 8, marginBottom: 24,
+  daysUnit: { color: COLORS.text2, fontSize: 16 },
+  target: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 24,
+    minHeight: 44,
   },
-  timeCell: {
-    alignItems: 'center', backgroundColor: COLORS.card,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, minWidth: 68,
+  targetText: { color: COLORS.text2, fontSize: 14 },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  timeVal: { fontSize: 28, fontWeight: '700', color: COLORS.text },
-  timeUnit: { fontSize: 10, color: COLORS.text2, marginTop: 2 },
-  sep: { fontSize: 20, color: COLORS.text2, marginBottom: 14 },
-  quoteBox: {
-    backgroundColor: COLORS.card, borderRadius: 16,
-    paddingVertical: 14, paddingHorizontal: 20,
-    marginHorizontal: 0, width: '100%',
+  studied: { color: COLORS.text, fontSize: 28 },
+  small: { color: COLORS.text2, fontSize: 14 },
+  track: {
+    height: 5,
+    backgroundColor: COLORS.card2,
+    borderRadius: 3,
+    marginTop: 18,
   },
-  quoteText: { fontSize: 13, color: COLORS.text2, textAlign: 'center', lineHeight: 22, fontStyle: 'italic' },
-  editDateBtn: { marginTop: 20, paddingVertical: 8 },
-  editDateText: { fontSize: 12, color: COLORS.text2, opacity: 0.6 },
+  fill: { height: "100%", backgroundColor: COLORS.accent, borderRadius: 3 },
+  start: { flexDirection: "row", alignItems: "center", minHeight: 66, gap: 10 },
+  date: { flex: 1, color: COLORS.text, textAlign: "right", fontSize: 13 },
 });

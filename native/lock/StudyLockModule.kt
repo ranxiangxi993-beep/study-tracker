@@ -18,6 +18,7 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     @ReactMethod fun isAdmin(p: Promise) { p.resolve(dpm.isAdminActive(comp)) }
 
     @ReactMethod fun isLockActive(p: Promise) {
+        StudyAccessibilityService.releaseExpiredStudyLock(reactApplicationContext)
         val prefs = reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
         val active = prefs.getBoolean("lock_active", false)
         val level = prefs.getString("lock_level", "strong") ?: "strong"
@@ -25,6 +26,12 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         StudyAccessibilityService.lockLevel = level
         // 持久化标志只代表用户意图；服务不在时锁机并没有真正生效。
         p.resolve(active && StudyAccessibilityService.instance != null)
+    }
+
+    @ReactMethod fun setStudyDeadline(endAt: Double, p: Promise) {
+        reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
+            .edit().putLong("study_end_at", endAt.toLong()).apply()
+        p.resolve(true)
     }
 
     @ReactMethod fun isIgnoringBatteryOptimizations(p: Promise) {
@@ -162,7 +169,7 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
         StudyAccessibilityService.lockLevel = prefs.getString("lock_level", "strong") ?: "strong"
         StudyAccessibilityService.lockActive = true
         // 持久化锁定状态：进程被杀重启后无障碍服务可据此自动恢复
-        prefs.edit().putBoolean("lock_active", true).apply()
+        prefs.edit().putBoolean("lock_active", true).remove("study_end_at").apply()
         if (StudyAccessibilityService.lockLevel == "light") {
             LockForegroundService.stop(reactApplicationContext)
         } else {
@@ -174,7 +181,7 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
     @ReactMethod fun unlock(p: Promise) {
         StudyAccessibilityService.lockActive = false
         reactApplicationContext.getSharedPreferences("study_lock", Context.MODE_PRIVATE)
-            .edit().putBoolean("lock_active", false).apply()
+            .edit().putBoolean("lock_active", false).remove("study_end_at").apply()
         LockForegroundService.stop(reactApplicationContext)
         try { reactApplicationContext.currentActivity?.stopLockTask() } catch (_: Exception) {}
         p.resolve(true)
@@ -207,7 +214,11 @@ class StudyLockModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule
             val pm = reactApplicationContext.packageManager
             val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
             val apps = Arguments.createArray()
-            pm.queryIntentActivities(intent, 0).forEach { info ->
+            pm.queryIntentActivities(intent, 0)
+                .distinctBy { it.activityInfo.packageName }
+                .filter { it.activityInfo.packageName != reactApplicationContext.packageName }
+                .sortedBy { it.loadLabel(pm).toString().lowercase() }
+                .forEach { info ->
                 apps.pushMap(Arguments.createMap().apply {
                     putString("pkg", info.activityInfo.packageName)
                     putString("name", info.loadLabel(pm).toString())

@@ -1,8 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Path, Line, Text as SvgText, Circle } from "react-native-svg";
 import { SUBJECTS, COLORS } from "../constants";
-import { formatDuration } from "../storage";
 
 const VB_W = 360;
 const VB_H = 276;
@@ -13,7 +12,7 @@ const INNER_R = 43;
 const ELBOW_R = 91;
 const LABEL_TOP = 32;
 const LABEL_BOTTOM = 240;
-const LABEL_GAP = 48;
+const LABEL_GAP = 62;
 
 function polarToXY(cx, cy, r, angleDeg) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
@@ -35,7 +34,7 @@ function donutPath(startA, endA) {
   ].join(" ");
 }
 
-function placeSideLabels(sideSlices, isRight) {
+export function placeSideLabels(sideSlices, isRight) {
   if (!sideSlices.length) return [];
 
   const sorted = [...sideSlices]
@@ -83,12 +82,16 @@ function placeSideLabels(sideSlices, isRight) {
 }
 
 export default function PieChart({ data, totalSec }) {
+  const [width, setWidth] = useState(VB_W);
+  const scale = width / VB_W;
+  const verticalOffset = (VB_H - VB_H * scale) / 2;
   const entries = Object.entries(SUBJECTS)
     .map(([key, subj]) => ({ key, ...subj, seconds: data[key] || 0 }))
     .filter((entry) => entry.seconds > 0)
     .sort((a, b) => b.seconds - a.seconds);
 
-  if (entries.length === 0 || !totalSec) {
+  const visibleTotal = entries.reduce((sum, entry) => sum + entry.seconds, 0);
+  if (entries.length === 0 || !visibleTotal) {
     return (
       <View style={styles.empty} accessibilityRole="text">
         <Text style={styles.emptyTitle}>还没有科目数据</Text>
@@ -101,13 +104,12 @@ export default function PieChart({ data, totalSec }) {
 
   let currentAngle = 0;
   const slices = entries.map((entry) => {
-    const angle = (entry.seconds / totalSec) * 360;
+    const angle = (entry.seconds / visibleTotal) * 360;
     const slice = {
       ...entry,
-      pct: Math.round((entry.seconds / totalSec) * 100),
+      pct: Number(((entry.seconds / visibleTotal) * 100).toFixed(1)),
       startAngle: currentAngle,
-      endAngle:
-        currentAngle + (angle >= 360 ? 359.999 : Math.max(angle - 1.1, 0.5)),
+      endAngle: currentAngle + (angle >= 360 ? 359.999 : angle * 0.985),
       midAngle: currentAngle + angle / 2,
     };
     currentAngle += angle;
@@ -128,8 +130,9 @@ export default function PieChart({ data, totalSec }) {
   return (
     <View
       style={styles.container}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       accessible
-      accessibilityLabel={`科目占比，总学习时长 ${formatDuration(totalSec)}`}
+      accessibilityLabel={`科目占比：${entries.map((entry) => `${entry.name} ${Number(((entry.seconds / visibleTotal) * 100).toFixed(1))}%`).join("，")}`}
     >
       <Svg width="100%" height={VB_H} viewBox={`0 0 ${VB_W} ${VB_H}`}>
         <Path d={donutPath(0, 359.999)} fill="rgba(255,255,255,0.08)" />
@@ -168,26 +171,6 @@ export default function PieChart({ data, totalSec }) {
               r={2.6}
               fill={label.color}
             />
-            <SvgText
-              x={label.textX}
-              y={label.labelY - 4}
-              fill={COLORS.text}
-              fontSize="11"
-              fontWeight="800"
-              textAnchor={label.anchor}
-            >
-              {label.name} {label.pct}%
-            </SvgText>
-            <SvgText
-              x={label.textX}
-              y={label.labelY + 13}
-              fill={COLORS.text2}
-              fontSize="9.5"
-              fontWeight="700"
-              textAnchor={label.anchor}
-            >
-              {formatDuration(label.seconds)}
-            </SvgText>
           </React.Fragment>
         ))}
 
@@ -199,7 +182,7 @@ export default function PieChart({ data, totalSec }) {
           fontWeight="900"
           textAnchor="middle"
         >
-          {formatDuration(totalSec)}
+          {Number((visibleTotal / 3600).toFixed(1))}
         </SvgText>
         <SvgText
           x={CX}
@@ -209,18 +192,58 @@ export default function PieChart({ data, totalSec }) {
           fontWeight="700"
           textAnchor="middle"
         >
-          总计
+          小时
         </SvgText>
       </Svg>
+      {labels.map((label) => (
+        <View
+          key={`text-${label.key}`}
+          pointerEvents="none"
+          style={[
+            styles.label,
+            {
+              top: verticalOffset + label.labelY * scale - 23,
+              width: 80 * scale,
+              ...(label.anchor === "start"
+                ? { right: 0, alignItems: "flex-start" }
+                : { left: 0, alignItems: "flex-end" }),
+            },
+          ]}
+        >
+          <Text style={styles.labelName} numberOfLines={1}>
+            {label.name}
+          </Text>
+          <Text
+            style={[styles.labelPercent, { color: label.color }]}
+            numberOfLines={1}
+          >
+            {label.pct < 0.1 ? "<0.1" : label.pct}%
+          </Text>
+          <Text style={styles.labelHours} numberOfLines={1}>
+            {Number((label.seconds / 3600).toFixed(1))} h
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  label: { position: "absolute", height: 44 },
+  labelName: {
+    color: COLORS.text,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "600",
+  },
+  labelPercent: { fontSize: 13, lineHeight: 17, fontWeight: "600" },
+  labelHours: { color: COLORS.text2, fontSize: 10, lineHeight: 12 },
   container: {
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
+    maxWidth: VB_W,
+    alignSelf: "center",
   },
   empty: {
     width: "100%",

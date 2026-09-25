@@ -6,6 +6,27 @@ import { SUBJECTS } from "./constants";
 // 原生精确闹钟模块（setAlarmClock）：用于"计时结束"提醒，绕过 Doze/省电冻结
 const TimerAlarm = NativeModules.TimerAlarm;
 
+export async function getTimerCapabilities() {
+  if (!TimerAlarm?.capabilities) return { native: false };
+  try {
+    return await TimerAlarm.capabilities();
+  } catch {
+    return { native: false };
+  }
+}
+
+export async function openExactAlarmSettings() {
+  if (Platform.OS !== "android" || !IntentLauncher?.startActivityAsync) return;
+  try {
+    await IntentLauncher.startActivityAsync(
+      "android.settings.REQUEST_SCHEDULE_EXACT_ALARM",
+      { data: "package:com.kaoyan.studytimer" },
+    );
+  } catch {
+    await openNotificationSettings();
+  }
+}
+
 // 打开"本应用的通知设置"页（用于让用户开启横幅/悬浮/锁屏通知——
 // 国产 ROM 默认关着，App 无法代为打开，只能引导用户手动开）。
 let IntentLauncher;
@@ -92,6 +113,7 @@ let planSyncQueue = Promise.resolve();
 
 // 申请通知权限 + 建立安卓通知渠道。App 启动时调一次。
 export async function ensureNotifPermission() {
+  if (Platform.OS === "web") return true;
   try {
     if (Platform.OS === "android") {
       // 删掉旧渠道（旧设置已被系统缓存、改不动）
@@ -146,8 +168,9 @@ export async function scheduleTimerEnd(
   subjectName,
   strongAlert = false,
 ) {
+  if (Platform.OS === "web") return "web-preview-timer";
   if (seconds <= 0) return null;
-  const title = isWork ? "🎉 学习完成！" : "⏰ 休息结束";
+  const title = isWork ? "学习完成" : "休息结束";
   const body = isWork
     ? `${subjectName || "本轮"} 计时到啦，继续加油`
     : "该回去学习了";
@@ -183,6 +206,7 @@ export async function scheduleTimerEnd(
 
 export async function cancelScheduled(id) {
   if (!id) return;
+  if (id === "web-preview-timer") return;
   if (id === "native-timer") {
     try {
       await TimerAlarm?.cancel?.();
@@ -294,7 +318,15 @@ function buildPlanReminders(plan) {
   for (const s of plan) {
     if (!s.start) continue;
     const [sh, sm] = s.start.split(":").map(Number);
-    if (!Number.isFinite(sh) || !Number.isFinite(sm)) continue;
+    if (
+      !Number.isInteger(sh) ||
+      !Number.isInteger(sm) ||
+      sh < 0 ||
+      sh > 23 ||
+      sm < 0 ||
+      sm > 59
+    )
+      continue;
 
     const subjName = s.customName || SUBJECTS[s.subject]?.name || "课程";
     const t = shiftTime(sh, sm, 2); // 开始前 2 分钟
@@ -314,6 +346,7 @@ function buildPlanReminders(plan) {
 // 根据当前每日计划，重建所有"每日重复"提醒。
 // 计划修改后 / App 启动时调用即可，系统会每天自动按点提醒。
 export async function syncPlanNotifications() {
+  if (Platform.OS === "web") return;
   planSyncQueue = planSyncQueue.catch(() => {}).then(runSyncPlanNotifications);
   return planSyncQueue;
 }
