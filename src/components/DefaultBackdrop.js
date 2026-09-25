@@ -11,7 +11,7 @@ export default function DefaultBackdrop() {
     >
       <Image
         source={require("../../assets/paper-rose.png")}
-        style={[StyleSheet.absoluteFill, { opacity: 0.7 }]}
+        style={[StyleSheet.absoluteFill, { opacity: 0.44 }]}
         contentFit="cover"
         accessible={false}
       />
