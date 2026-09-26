@@ -208,6 +208,10 @@ export function ActionButton({
     </Pressable>
   );
 }
+// Android Modal already uses adjustResize. A second height adjustment can
+// feed resized layouts back into keyboard animations when the IME closes.
+const SheetContainer = Platform.OS === "ios" ? KeyboardAvoidingView : View;
+
 export function Sheet({ visible, onClose, title, children }) {
   const insets = useSafeAreaInsets();
   return (
@@ -217,9 +221,9 @@ export function Sheet({ visible, onClose, title, children }) {
       animationType="slide"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
+      <SheetContainer
         style={ui.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        {...(Platform.OS === "ios" ? { behavior: "padding" } : {})}
       >
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -240,7 +244,7 @@ export function Sheet({ visible, onClose, title, children }) {
             {children}
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </SheetContainer>
     </Modal>
   );
 }

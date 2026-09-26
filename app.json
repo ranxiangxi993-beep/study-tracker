@@ -2,7 +2,7 @@
   "expo": {
     "name": "研途",
     "slug": "study-tracker",
-    "version": "2.8.1",
+    "version": "2.8.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.kaoyan.studytimer",
-      "versionCode": 48,
+      "versionCode": 49,
       "adaptiveIcon": {
         "backgroundColor": "#0f0f1a",
         "foregroundImage": "./assets/android-icon-foreground.png",
